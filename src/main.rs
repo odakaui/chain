@@ -24,8 +24,26 @@ struct Project {
 
 fn add_project(conn: &Connection, project: Project) -> Result<(), Box<dyn Error>> {
     conn.execute(
-            "INSERT INTO projects (name, sunday, monday, tuesday, wednesday, thursday, friday, saturday)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "INSERT INTO projects (
+                name, 
+                sunday, 
+                monday, 
+                tuesday, 
+                wednesday, 
+                thursday, 
+                friday, 
+                saturday
+                )
+                VALUES (
+                    ?1, 
+                    ?2, 
+                    ?3, 
+                    ?4, 
+                    ?5, 
+                    ?6, 
+                    ?7, 
+                    ?8
+                    )
                 ON CONFLICT (name)
                 DO UPDATE SET 
                     sunday = ?2,
@@ -42,10 +60,7 @@ fn add_project(conn: &Connection, project: Project) -> Result<(), Box<dyn Error>
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let db = dirs::home_dir().unwrap().join(".chain").join("chain_db");
-    let conn = Connection::open(db)?;
-
+fn setup_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS chains (
                     project_id      INTEGER,
@@ -71,6 +86,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         params![],
     )?;
 
+    Ok(())
+
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let db = dirs::home_dir().unwrap().join(".chain").join("chain_db");
+    let conn = Connection::open(db)?;
+
     let project = Project {
         id: None,
         name: "Project".to_string(),
@@ -82,6 +105,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         friday: true,
         saturday: true,
     };
+
+    setup_tables(&conn)?;
 
     add_project(&conn, project)?;
 

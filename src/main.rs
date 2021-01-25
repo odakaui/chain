@@ -1,6 +1,7 @@
 use chrono::{Date, Utc};
 use dirs;
 use rusqlite::{params, Connection, Result};
+use std::error::Error;
 
 #[derive(Debug)]
 struct Chain {
@@ -10,12 +11,38 @@ struct Chain {
 
 #[derive(Debug)]
 struct Project {
-    id: i32,
+    id: Option<i32>,
     name: String,
-    filter: u8,
+    sunday: bool,
+    monday: bool,
+    tuesday: bool,
+    wednesday: bool,
+    thursday: bool,
+    friday: bool,
+    saturday: bool,
 }
 
-fn main() -> Result<()> {
+fn add_project(conn: &Connection, project: Project) -> Result<(), Box<dyn Error>> {
+    conn.execute(
+            "INSERT INTO projects (name, sunday, monday, tuesday, wednesday, thursday, friday, saturday)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                ON CONFLICT (name)
+                DO UPDATE SET 
+                    sunday = ?2,
+                    monday = ?3,
+                    tuesday = ?4,
+                    wednesday = ?5,
+                    thursday = ?6,
+                    friday = ?7,
+                    saturday = ?8
+            ;",
+            params![project.name,  project.sunday, project.monday, project.tuesday, project.wednesday, project.thursday, project.friday, project.saturday]
+            )?;
+
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
     let db = dirs::home_dir().unwrap().join(".chain").join("chain_db");
     let conn = Connection::open(db)?;
 
@@ -32,11 +59,31 @@ fn main() -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS projects (
                     id              INTEGER PRIMARY KEY,
-                    name            TEXT NOT NULL,
-                    filter          INTEGER
+                    name            TEXT NOT NULL UNIQUE,
+                    sunday          INTEGER NOT NULL,
+                    monday          INTEGER NOT NULL,
+                    tuesday         INTEGER NOT NULL,
+                    wednesday       INTEGER NOT NULL,
+                    thursday        INTEGER NOT NULL,
+                    friday          INTEGER NOT NULL,
+                    saturday        INTEGER NOT NULL
                 );",
         params![],
     )?;
+
+    let project = Project {
+        id: None,
+        name: "Project".to_string(),
+        sunday: true,
+        monday: true,
+        tuesday: true,
+        wednesday: true,
+        thursday: true,
+        friday: true,
+        saturday: true,
+    };
+
+    add_project(&conn, project)?;
 
     Ok(())
 }

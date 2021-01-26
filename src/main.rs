@@ -22,7 +22,7 @@ struct Project {
     saturday: bool,
 }
 
-fn add_project(conn: &Connection, project: Project) -> Result<(), Box<dyn Error>> {
+fn add_project(conn: &Connection, project: &Project) -> Result<(), Box<dyn Error>> {
     conn.execute(
             "INSERT INTO projects (
                 name, 
@@ -58,6 +58,18 @@ fn add_project(conn: &Connection, project: Project) -> Result<(), Box<dyn Error>
             )?;
 
     Ok(())
+}
+
+fn get_project_id(conn: &Connection, project_name: &str) -> Result<i32, Box<dyn Error>> {
+    Ok(
+            conn.query_row_and_then(
+            "SELECT id FROM projects WHERE name=?;",
+            params![project_name],
+            |row| row.get(0),
+            )?
+            )
+
+
 }
 
 fn setup_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
@@ -108,7 +120,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     setup_tables(&conn)?;
 
-    add_project(&conn, project)?;
+    add_project(&conn, &project)?;
+
+    let project_name = &project.name;
+
+    let project_id = get_project_id(&conn, &project_name)?;
+
+    println!("project_id = {}", project_id);
 
     Ok(())
 }

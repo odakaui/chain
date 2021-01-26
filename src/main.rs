@@ -1,7 +1,34 @@
+use anyhow::Result;
 use chrono::{NaiveDate, Utc};
 use dirs;
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection};
 use std::error::Error;
+use std::fmt;
+
+#[derive(Debug)]
+struct ChainError {
+    details: String,
+}
+
+impl ChainError {
+    fn new(msg: &str) -> ChainError {
+        ChainError {
+            details: msg.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for ChainError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl Error for ChainError {
+    fn description(&self) -> &str {
+        &self.details
+    }
+}
 
 #[derive(Debug)]
 struct Link {
@@ -22,7 +49,7 @@ struct Chain {
     saturday: bool,
 }
 
-fn setup_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
+fn setup_tables(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS chains (
                     id              INTEGER PRIMARY KEY,
@@ -51,7 +78,7 @@ fn setup_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn add_chain(conn: &Connection, chain: &Chain) -> Result<(), Box<dyn Error>> {
+fn add_chain(conn: &Connection, chain: &Chain) -> Result<()> {
     conn.execute(
         "INSERT INTO chains (
                 name, 
@@ -98,7 +125,7 @@ fn add_chain(conn: &Connection, chain: &Chain) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn get_chain_id(conn: &Connection, chain_name: &str) -> Result<i32, Box<dyn Error>> {
+fn get_chain_id(conn: &Connection, chain_name: &str) -> Result<i32> {
     Ok(conn.query_row_and_then(
         "SELECT id FROM chains WHERE name=?;",
         params![chain_name],
@@ -106,7 +133,7 @@ fn get_chain_id(conn: &Connection, chain_name: &str) -> Result<i32, Box<dyn Erro
     )?)
 }
 
-fn add_link(conn: &Connection, link: &Link) -> Result<(), Box<dyn Error>> {
+fn add_link(conn: &Connection, link: &Link) -> Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO links (
                 chain_id,
@@ -121,8 +148,27 @@ fn add_link(conn: &Connection, link: &Link) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let db = dirs::home_dir().unwrap().join(".chain").join("chain_db");
+fn get_links_for_chain_id(conn: &Connection, chain_id: i32) -> Result<Vec<Link>> {
+    let mut statement = conn.prepare("SELECT chain_id, date FROM links WHERE chain_id = ?;")?;
+    let link_iter = statement.query_map(params![chain_id], |row| {
+        let chain_id: i32 = row.get(0)?;
+        let date_str: String = row.get::<usize, String>(1)?.to_string();
+        let date = NaiveDate::parse_from_str(&date_str, "%Y%m%d").unwrap();
+
+        Ok(Link {
+            chain_id: chain_id,
+            date: date,
+        })
+    })?;
+
+    Ok(link_iter.filter_map(Result::ok).collect())
+}
+
+fn main() -> Result<()> {
+    let db = dirs::home_dir()
+        .ok_or(ChainError::new("Failed to locate home directory"))?
+        .join(".chain")
+        .join("chain_db");
     let conn = Connection::open(db)?;
 
     let chain = Chain {
@@ -164,20 +210,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     add_link(&conn, &link_two)?;
     add_link(&conn, &link_three)?;
 
-    let mut statement = conn.prepare("SELECT chain_id, date FROM links WHERE chain_id = ?;")?;
-    let link_iter = statement.query_map(params![chain_id], |row| {
-        let chain_id: i32 = row.get(0)?;
-        let date_str: String = row.get::<usize, String>(1)?.to_string();
-        let date = NaiveDate::parse_from_str(&date_str, "%Y%m%d").unwrap();
+    let links = get_links_for_chain_id(&conn, chain_id)?;
 
-        Ok(Link {
-            chain_id: chain_id,
-            date: date,
-        })
-    })?;
-
-    for link in link_iter {
-        println!("Found link {:?}", link.unwrap());
+    for link in links.iter() {
+        println!("Found link {:?}", link);
     }
 
     Ok(())

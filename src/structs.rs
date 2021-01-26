@@ -1,3 +1,5 @@
+use chrono::NaiveDate;
+
 #[derive(Debug)]
 pub struct Chain {
     pub id: Option<i32>,
@@ -9,4 +11,10 @@ pub struct Chain {
     pub thursday: bool,
     pub friday: bool,
     pub saturday: bool,
+}
+
+#[derive(Debug)]
+pub struct Link {
+    pub chain_id: i32,
+    pub date: NaiveDate,
 }

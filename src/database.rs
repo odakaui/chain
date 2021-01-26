@@ -1,8 +1,11 @@
-use crate::chain::Chain;
-use crate::link::Link;
-use anyhow::Result;
-use chrono::NaiveDate;
+use crate::Chain;
+use crate::Link;
+use crate::logic::is_valid;
+use anyhow::{bail, Result};
+use chrono::{Datelike, NaiveDate, Weekday};
 use rusqlite::{params, Connection, NO_PARAMS};
+
+static DATE_FORMAT: &str = "%Y%m%d";
 
 pub fn setup_tables(conn: &Connection) -> Result<()> {
     conn.execute(
@@ -122,16 +125,11 @@ pub fn get_chain_for_id(conn: &Connection, chain_id: i32) -> Result<Chain> {
 
 pub fn add_link(conn: &Connection, link: &Link) -> Result<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO links (
-                chain_id,
-                date
-                )
-                VALUES (
-                    ?1,
-                    ?2
-            );",
-        params![link.chain_id, link.date.format("%Y%m%d").to_string()],
+        "INSERT OR IGNORE INTO links (chain_id, date)
+                VALUES (?1, ?2);",
+        params![link.chain_id, link.date.format(DATE_FORMAT).to_string()],
     )?;
+
     Ok(())
 }
 
@@ -143,8 +141,15 @@ pub fn delete_link(conn: &Connection, link: &Link) -> Result<()> {
 
     Ok(())
 }
+
 pub fn get_links_for_chain_id(conn: &Connection, chain_id: i32) -> Result<Vec<Link>> {
-    let mut statement = conn.prepare("SELECT chain_id, date FROM links WHERE chain_id = ?;")?;
+    let mut statement = conn.prepare(
+        "SELECT chain_id, date 
+            FROM links 
+            WHERE chain_id = ? 
+            ORDER BY date ASC;",
+    )?;
+
     let link_iter = statement.query_map(params![chain_id], |row| {
         let chain_id: i32 = row.get(0)?;
         let date_str: String = row.get::<usize, String>(1)?.to_string();

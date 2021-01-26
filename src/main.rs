@@ -1,19 +1,16 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use chain::Chain;
-use chain_error::ChainError;
-use chrono::{Datelike, Utc, Weekday};
-use database::{
-    add_chain, add_link, delete_chain_for_name, delete_link, get_chain_id_for_name, get_chain_for_id, get_chains,
-    get_links_for_chain_id, setup_tables,
+use chain::ChainError;
+use chrono::{Datelike, NaiveDate, Utc, Weekday};
+use chain::database::{
+    add_chain, delete_chain_for_name, delete_link, get_chain_for_id, get_chain_id_for_name,
+    get_chains, get_links_for_chain_id, setup_tables,
 };
 use dirs;
-use link::Link;
+use chain::Link;
 use rusqlite::{params, Connection};
-
-mod chain;
-mod chain_error;
-mod database;
-mod link;
+use chain::logic;
+use chain::database;
 
 fn main() -> Result<()> {
     let db = dirs::home_dir()
@@ -46,7 +43,6 @@ fn main() -> Result<()> {
         println!("Found {:?}", chain);
     }
 
-    // Add link for chain
     let chain_name = "Chain 1";
     let chain_id = get_chain_id_for_name(&conn, chain_name)?;
 
@@ -56,37 +52,27 @@ fn main() -> Result<()> {
     let mut i = 0;
 
     while i < 100 {
-        let weekday = date.weekday();
-
-        println!("{:?}", weekday);
-
-        let is_valid = match weekday {
-            Weekday::Sun => chain.sunday,
-            Weekday::Mon => chain.monday,
-            Weekday::Tue => chain.tuesday,
-            Weekday::Wed => chain.wednesday,
-            Weekday::Thu => chain.thursday,
-            Weekday::Fri => chain.friday,
-            Weekday::Sat => chain.saturday,
+        let link = Link {
+            chain_id: chain_id,
+            date: date,
         };
 
-        if is_valid {
-            let link = Link { chain_id, date };
+        if logic::check_link(&chain, &link) {
+            database::add_link(&conn, &link)?;
 
-            add_link(&conn, &link)?;
-
-            i += 1;
-        } else {
-            println!("Invalid date");
+            i += 1
         }
 
         date = date.succ();
     }
+
     let links = get_links_for_chain_id(&conn, chain_id)?;
 
     for (i, link) in links.iter().enumerate() {
         println!("{}. Found {:?}", i + 1, link);
     }
+
+
 
     //    let chain_name = &chain_two.name;
     //

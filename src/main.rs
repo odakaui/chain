@@ -1,16 +1,16 @@
-use chrono::{Date, Utc};
+use chrono::{NaiveDate, Utc};
 use dirs;
 use rusqlite::{params, Connection, Result};
 use std::error::Error;
 
 #[derive(Debug)]
-struct Chain {
-    project_id: i32,
-    date: Date<Utc>,
+struct Link {
+    chain_id: i32,
+    date: NaiveDate,
 }
 
 #[derive(Debug)]
-struct Project {
+struct Chain {
     id: Option<i32>,
     name: String,
     sunday: bool,
@@ -22,9 +22,38 @@ struct Project {
     saturday: bool,
 }
 
-fn add_project(conn: &Connection, project: &Project) -> Result<(), Box<dyn Error>> {
+fn setup_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
     conn.execute(
-            "INSERT INTO projects (
+        "CREATE TABLE IF NOT EXISTS chains (
+                    id              INTEGER PRIMARY KEY,
+                    name            TEXT NOT NULL UNIQUE,
+                    sunday          INTEGER NOT NULL,
+                    monday          INTEGER NOT NULL,
+                    tuesday         INTEGER NOT NULL,
+                    wednesday       INTEGER NOT NULL,
+                    thursday        INTEGER NOT NULL,
+                    friday          INTEGER NOT NULL,
+                    saturday        INTEGER NOT NULL
+                );",
+        params![],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS links (
+                    chain_id        INTEGER,
+                    date            TEXT NOT NULL,
+                    PRIMARY KEY (chain_id, date),
+                    FOREIGN KEY (chain_id) REFERENCES chains(id)
+                );",
+        params![],
+    )?;
+
+    Ok(())
+}
+
+fn add_chain(conn: &Connection, chain: &Chain) -> Result<(), Box<dyn Error>> {
+    conn.execute(
+        "INSERT INTO chains (
                 name, 
                 sunday, 
                 monday, 
@@ -54,59 +83,49 @@ fn add_project(conn: &Connection, project: &Project) -> Result<(), Box<dyn Error
                     friday = ?7,
                     saturday = ?8
             ;",
-            params![project.name,  project.sunday, project.monday, project.tuesday, project.wednesday, project.thursday, project.friday, project.saturday]
-            )?;
+        params![
+            chain.name,
+            chain.sunday,
+            chain.monday,
+            chain.tuesday,
+            chain.wednesday,
+            chain.thursday,
+            chain.friday,
+            chain.saturday
+        ],
+    )?;
 
     Ok(())
 }
 
-fn get_project_id(conn: &Connection, project_name: &str) -> Result<i32, Box<dyn Error>> {
-    Ok(
-            conn.query_row_and_then(
-            "SELECT id FROM projects WHERE name=?;",
-            params![project_name],
-            |row| row.get(0),
-            )?
-            )
-
-
+fn get_chain_id(conn: &Connection, chain_name: &str) -> Result<i32, Box<dyn Error>> {
+    Ok(conn.query_row_and_then(
+        "SELECT id FROM chains WHERE name=?;",
+        params![chain_name],
+        |row| row.get(0),
+    )?)
 }
 
-fn setup_tables(conn: &Connection) -> Result<(), Box<dyn Error>> {
+fn add_link(conn: &Connection, link: &Link) -> Result<(), Box<dyn Error>> {
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS chains (
-                    project_id      INTEGER,
-                    date            DATE NOT NULL,
-                    PRIMARY KEY (project_id, date),
-                    FOREIGN KEY (project_id) REFERENCES projects(id)
-                );",
-        params![],
+        "INSERT OR IGNORE INTO links (
+                chain_id,
+                date
+                )
+                VALUES (
+                    ?1,
+                    ?2
+            );",
+        params![link.chain_id, link.date.format("%Y%m%d").to_string()],
     )?;
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS projects (
-                    id              INTEGER PRIMARY KEY,
-                    name            TEXT NOT NULL UNIQUE,
-                    sunday          INTEGER NOT NULL,
-                    monday          INTEGER NOT NULL,
-                    tuesday         INTEGER NOT NULL,
-                    wednesday       INTEGER NOT NULL,
-                    thursday        INTEGER NOT NULL,
-                    friday          INTEGER NOT NULL,
-                    saturday        INTEGER NOT NULL
-                );",
-        params![],
-    )?;
-
     Ok(())
-
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let db = dirs::home_dir().unwrap().join(".chain").join("chain_db");
     let conn = Connection::open(db)?;
 
-    let project = Project {
+    let chain = Chain {
         id: None,
         name: "Project".to_string(),
         sunday: true,
@@ -119,14 +138,47 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     setup_tables(&conn)?;
+    add_chain(&conn, &chain)?;
 
-    add_project(&conn, &project)?;
+    let chain_name = &chain.name;
+    let chain_id = get_chain_id(&conn, &chain_name)?;
 
-    let project_name = &project.name;
+    println!("chain_id = {}", chain_id);
 
-    let project_id = get_project_id(&conn, &project_name)?;
+    let link_one = Link {
+        chain_id: chain_id,
+        date: Utc::today().naive_utc().pred(),
+    };
 
-    println!("project_id = {}", project_id);
+    let link_two = Link {
+        chain_id: chain_id,
+        date: Utc::today().naive_utc(),
+    };
+
+    let link_three = Link {
+        chain_id: chain_id,
+        date: Utc::today().naive_utc().succ(),
+    };
+
+    add_link(&conn, &link_one)?;
+    add_link(&conn, &link_two)?;
+    add_link(&conn, &link_three)?;
+
+    let mut statement = conn.prepare("SELECT chain_id, date FROM links WHERE chain_id = ?;")?;
+    let link_iter = statement.query_map(params![chain_id], |row| {
+        let chain_id: i32 = row.get(0)?;
+        let date_str: String = row.get::<usize, String>(1)?.to_string();
+        let date = NaiveDate::parse_from_str(&date_str, "%Y%m%d").unwrap();
+
+        Ok(Link {
+            chain_id: chain_id,
+            date: date,
+        })
+    })?;
+
+    for link in link_iter {
+        println!("Found link {:?}", link.unwrap());
+    }
 
     Ok(())
 }

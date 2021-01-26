@@ -125,9 +125,16 @@ fn add_chain(conn: &Connection, chain: &Chain) -> Result<()> {
     Ok(())
 }
 
+fn delete_chain_for_name(conn: &Connection, chain_name: &str) -> Result<()> {
+    let chain_id = get_chain_id(&conn, chain_name)?;
+    conn.execute("DELETE FROM chains WHERE id=?", params![chain_id])?;
+
+    Ok(())
+}
+
 fn get_chains(conn: &Connection) -> Result<Vec<Chain>> {
     let mut statement = conn.prepare(
-            "SELECT 
+        "SELECT 
                 id, 
                 name, 
                 sunday, 
@@ -137,19 +144,19 @@ fn get_chains(conn: &Connection) -> Result<Vec<Chain>> {
                 thursday, 
                 friday, 
                 saturday 
-            FROM chains;"
-            )?;
+            FROM chains;",
+    )?;
     let chain_iter = statement.query_map(NO_PARAMS, |row| {
         Ok(Chain {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                sunday: row.get(2)?,
-                monday: row.get(3)?,
-                tuesday: row.get(4)?,
-                wednesday: row.get(5)?,
-                thursday: row.get(6)?,
-                friday: row.get(7)?,
-                saturday: row.get(8)?,
+            id: row.get(0)?,
+            name: row.get(1)?,
+            sunday: row.get(2)?,
+            monday: row.get(3)?,
+            tuesday: row.get(4)?,
+            wednesday: row.get(5)?,
+            thursday: row.get(6)?,
+            friday: row.get(7)?,
+            saturday: row.get(8)?,
         })
     })?;
 
@@ -249,6 +256,16 @@ fn main() -> Result<()> {
         println!("Found {:?}", chain);
     }
 
+    let chain_name = &chain_two.name;
+
+    delete_chain_for_name(&conn, chain_name)?;
+
+    let chains = get_chains(&conn)?;
+
+    for chain in chains.iter() {
+        println!("Found {:?}", chain);
+    }
+
     let chain_name = &chain_one.name;
     let chain_id = get_chain_id(&conn, &chain_name)?;
 
@@ -278,8 +295,6 @@ fn main() -> Result<()> {
     for link in links.iter() {
         println!("Found {:?}", link);
     }
-
-
 
     Ok(())
 }

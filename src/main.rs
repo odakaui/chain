@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{NaiveDate, Utc};
 use dirs;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, NO_PARAMS};
 use std::error::Error;
 use std::fmt;
 
@@ -125,6 +125,37 @@ fn add_chain(conn: &Connection, chain: &Chain) -> Result<()> {
     Ok(())
 }
 
+fn get_chains(conn: &Connection) -> Result<Vec<Chain>> {
+    let mut statement = conn.prepare(
+            "SELECT 
+                id, 
+                name, 
+                sunday, 
+                monday, 
+                tuesday, 
+                wednesday, 
+                thursday, 
+                friday, 
+                saturday 
+            FROM chains;"
+            )?;
+    let chain_iter = statement.query_map(NO_PARAMS, |row| {
+        Ok(Chain {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                sunday: row.get(2)?,
+                monday: row.get(3)?,
+                tuesday: row.get(4)?,
+                wednesday: row.get(5)?,
+                thursday: row.get(6)?,
+                friday: row.get(7)?,
+                saturday: row.get(8)?,
+        })
+    })?;
+
+    Ok(chain_iter.filter_map(Result::ok).collect())
+}
+
 fn get_chain_id(conn: &Connection, chain_name: &str) -> Result<i32> {
     Ok(conn.query_row_and_then(
         "SELECT id FROM chains WHERE name=?;",
@@ -171,9 +202,33 @@ fn main() -> Result<()> {
         .join("chain_db");
     let conn = Connection::open(db)?;
 
-    let chain = Chain {
+    let chain_one = Chain {
         id: None,
-        name: "Project".to_string(),
+        name: "Chain One".to_string(),
+        sunday: true,
+        monday: true,
+        tuesday: true,
+        wednesday: true,
+        thursday: true,
+        friday: true,
+        saturday: true,
+    };
+
+    let chain_two = Chain {
+        id: None,
+        name: "Chain Two".to_string(),
+        sunday: true,
+        monday: true,
+        tuesday: true,
+        wednesday: true,
+        thursday: true,
+        friday: true,
+        saturday: true,
+    };
+
+    let chain_three = Chain {
+        id: None,
+        name: "Chain Three".to_string(),
         sunday: true,
         monday: true,
         tuesday: true,
@@ -184,9 +239,17 @@ fn main() -> Result<()> {
     };
 
     setup_tables(&conn)?;
-    add_chain(&conn, &chain)?;
+    add_chain(&conn, &chain_one)?;
+    add_chain(&conn, &chain_two)?;
+    add_chain(&conn, &chain_three)?;
 
-    let chain_name = &chain.name;
+    let chains = get_chains(&conn)?;
+
+    for chain in chains.iter() {
+        println!("Found {:?}", chain);
+    }
+
+    let chain_name = &chain_one.name;
     let chain_id = get_chain_id(&conn, &chain_name)?;
 
     println!("chain_id = {}", chain_id);
@@ -213,8 +276,10 @@ fn main() -> Result<()> {
     let links = get_links_for_chain_id(&conn, chain_id)?;
 
     for link in links.iter() {
-        println!("Found link {:?}", link);
+        println!("Found {:?}", link);
     }
+
+
 
     Ok(())
 }

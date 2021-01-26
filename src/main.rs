@@ -186,6 +186,14 @@ fn add_link(conn: &Connection, link: &Link) -> Result<()> {
     Ok(())
 }
 
+fn delete_link(conn: &Connection, link: &Link) -> Result<()> {
+    conn.execute(
+            "DELETE FROM links WHERE chain_id=?1 AND date=?2;", 
+            params![link.chain_id, link.date.format("%Y%m%d").to_string()]
+            )?;
+
+    Ok(())
+}
 fn get_links_for_chain_id(conn: &Connection, chain_id: i32) -> Result<Vec<Link>> {
     let mut statement = conn.prepare("SELECT chain_id, date FROM links WHERE chain_id = ?;")?;
     let link_iter = statement.query_map(params![chain_id], |row| {
@@ -289,6 +297,16 @@ fn main() -> Result<()> {
     add_link(&conn, &link_one)?;
     add_link(&conn, &link_two)?;
     add_link(&conn, &link_three)?;
+
+    let links = get_links_for_chain_id(&conn, chain_id)?;
+
+    for link in links.iter() {
+        println!("Found {:?}", link);
+    }
+
+    let link = &link_two;
+
+    delete_link(&conn, link)?;
 
     let links = get_links_for_chain_id(&conn, chain_id)?;
 

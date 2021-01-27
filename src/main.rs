@@ -4,7 +4,7 @@ use chain::logic;
 use chain::Chain;
 use chain::ChainError;
 use chain::Link;
-use chrono::{NaiveDate, Utc};
+use chrono::{NaiveDate, Local};
 use clap::{App, Arg, SubCommand};
 use dirs;
 use rusqlite::{Connection};
@@ -257,7 +257,7 @@ fn main() -> Result<()> {
         if matches.is_present("date") {
             date = NaiveDate::parse_from_str(matches.value_of("date").unwrap(), "%Y-%m-%d")?;
         } else {
-            date = Utc::today().naive_utc();
+            date = Local::today().naive_utc();
         }
 
         let chain_id = match database::get_chain_id_for_name(&conn, &chain_name) {
@@ -324,7 +324,7 @@ fn main() -> Result<()> {
     //
     //    let chain = get_chain_for_id(&conn, chain_id)?;
     //
-    //    let mut date = Utc::today().naive_utc();
+    //    let mut date = Local::today().naive_utc();
     //    let mut i = 0;
     //
     //    while i < 100 {

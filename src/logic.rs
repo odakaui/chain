@@ -29,8 +29,6 @@ pub fn calculate_streak(chain: &Chain, links: &Vec<Link>) -> Streak {
         prev_date = date;
         date = Some(link.date);
 
-        streak += 1;
-
         if date.is_some() && prev_date.is_some() {
             let days = date
                 .unwrap()
@@ -38,12 +36,13 @@ pub fn calculate_streak(chain: &Chain, links: &Vec<Link>) -> Streak {
                 .num_days();
             let mut tmp_date = prev_date.unwrap().succ();
 
-            for _ in 0..days - 1 {
+            for i in 0..days - 1 {
                 if logic::is_valid(&chain, &tmp_date.weekday()) {
+                    println!("{}", i);
                     if streak > longest_streak {
                         longest_streak = streak;
-                        streak = 0;
                     }
+                    streak = 0;
                 }
 
                 tmp_date = tmp_date.succ();
@@ -57,6 +56,8 @@ pub fn calculate_streak(chain: &Chain, links: &Vec<Link>) -> Streak {
                 );
             }
         }
+
+        streak += 1;
     }
 
     if streak > longest_streak {

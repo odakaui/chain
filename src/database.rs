@@ -76,7 +76,8 @@ pub fn get_chains(conn: &Connection) -> Result<Vec<Chain>> {
                 thursday, 
                 friday, 
                 saturday 
-            FROM chains;",
+            FROM chains
+            ORDER BY name ASC;",
     )?;
     let chain_iter = statement.query_map(NO_PARAMS, |row| {
         Ok(Chain {

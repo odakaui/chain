@@ -19,6 +19,16 @@ fn main() -> Result<()> {
         .author("Odaka Ui <31593320+odakaui@users.noreply.github.com>")
         .about("A simple habit tracking app.")
         .subcommand(
+            SubCommand::with_name("streak").arg(
+                Arg::with_name("chain")
+                    .value_name("CHAIN")
+                    .required(false)
+                    .index(1)
+                    .takes_value(true)
+                    .help("Name of chain to add link to"),
+            ),
+        )
+        .subcommand(
             SubCommand::with_name("add-link")
                 .arg(
                     Arg::with_name("date")
@@ -98,15 +108,14 @@ fn main() -> Result<()> {
                 ),
         )
         .subcommand(
-            SubCommand::with_name("delete-chain")
-                .arg(
-                    Arg::with_name("chain")
-                        .value_name("CHAIN")
-                        .required(true)
-                        .index(1)
-                        .takes_value(true)
-                        .help("Name of chain to add link to"),
-                ),
+            SubCommand::with_name("delete-chain").arg(
+                Arg::with_name("chain")
+                    .value_name("CHAIN")
+                    .required(true)
+                    .index(1)
+                    .takes_value(true)
+                    .help("Name of chain to add link to"),
+            ),
         )
         .get_matches();
 
@@ -117,6 +126,37 @@ fn main() -> Result<()> {
     let conn = Connection::open(db)?;
 
     database::setup_tables(&conn)?;
+
+    if let Some(matches) = matches.subcommand_matches("streak") {
+        if matches.is_present("chain") {
+            let chain_name = matches.value_of("chain").unwrap();
+            let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
+            let chain = database::get_chain_for_id(&conn, chain_id)?;
+            let links = database::get_links_for_chain_id(&conn, chain_id)?;
+
+            println!("{:?}", links);
+            let streak = logic::calculate_streak(&chain, &links);
+
+            println!("Current streak: {}", streak.streak);
+            println!("Longest streak: {}", streak.longest_streak);
+        } else {
+            let chains = database::get_chains(&conn)?;
+
+            for chain in chains.iter() {
+                let chain_id = chain.id.unwrap();
+                let links = database::get_links_for_chain_id(&conn, chain_id)?;
+
+                println!("{:?}", links);
+
+                let streak = logic::calculate_streak(&chain, &links);
+
+                println!("Information for chain named \"{}\"", chain.name);
+                println!("Current streak: {}", streak.streak);
+                println!("Longest streak: {}", streak.longest_streak);
+                println!("");
+            }
+        }
+    }
 
     if let Some(matches) = matches.subcommand_matches("add-chain") {
         let chain_name = matches.value_of("chain").unwrap();
@@ -180,8 +220,7 @@ fn main() -> Result<()> {
             );
         } else if matches.is_present("custom") {
             todo!()
-        }
-        else {
+        } else {
             let chain = Chain {
                 id: None,
                 name: chain_name.to_string(),
@@ -205,6 +244,12 @@ fn main() -> Result<()> {
 
     if let Some(matches) = matches.subcommand_matches("delete-chain") {
         let chain_name = matches.value_of("chain").unwrap();
+        let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
+        let links = database::get_links_for_chain_id(&conn, chain_id)?;
+
+        for link in links.iter() {
+            database::delete_link(&conn, &link)?;
+        }
 
         database::delete_chain_for_name(&conn, &chain_name)?;
     }
@@ -220,10 +265,18 @@ fn main() -> Result<()> {
 
         let chain_id = match database::get_chain_id_for_name(&conn, &chain_name) {
             Ok(id) => id,
-            Err(e) => return Err(e),    // TODO: Make error handling more robust, or at least clean up the message
+            Err(e) => return Err(e), // TODO: Make error handling more robust, or at least clean up the message
         };
 
         let link = Link { chain_id, date };
+        let chain = database::get_chain_for_id(&conn, chain_id)?;
+
+        if !logic::check_link(&chain, &link) {
+            bail!(
+                "{} is not a valid day based on the chain's filter",
+                date.format("%Y-%m-%d")
+            );
+        }
 
         database::add_link(&conn, &link)?;
 
@@ -239,10 +292,7 @@ fn main() -> Result<()> {
         let chain_name = matches.value_of("chain").unwrap();
         let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
 
-        let link = Link {
-            chain_id,
-                date,
-        };
+        let link = Link { chain_id, date };
 
         database::delete_link(&conn, &link)?;
     }

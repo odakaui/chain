@@ -1,6 +1,6 @@
+use crate::logic::is_valid;
 use crate::Chain;
 use crate::Link;
-use crate::logic::is_valid;
 use anyhow::{bail, Result};
 use chrono::{Datelike, NaiveDate, Weekday};
 use rusqlite::{params, Connection, NO_PARAMS};

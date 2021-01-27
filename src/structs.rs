@@ -18,3 +18,9 @@ pub struct Link {
     pub chain_id: i32,
     pub date: NaiveDate,
 }
+
+#[derive(Debug)]
+pub struct Streak {
+    pub streak: i32,
+    pub longest_streak: i32,
+}

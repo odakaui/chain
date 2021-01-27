@@ -1,16 +1,16 @@
 use anyhow::{bail, Result};
-use chain::Chain;
-use chain::ChainError;
-use chrono::{Datelike, NaiveDate, Utc, Weekday};
+use chain::database;
 use chain::database::{
     add_chain, delete_chain_for_name, delete_link, get_chain_for_id, get_chain_id_for_name,
     get_chains, get_links_for_chain_id, setup_tables,
 };
-use dirs;
-use chain::Link;
-use rusqlite::{params, Connection};
 use chain::logic;
-use chain::database;
+use chain::Chain;
+use chain::ChainError;
+use chain::Link;
+use chrono::{Datelike, NaiveDate, Utc, Weekday};
+use dirs;
+use rusqlite::{params, Connection};
 
 fn main() -> Result<()> {
     let db = dirs::home_dir()
@@ -69,10 +69,21 @@ fn main() -> Result<()> {
     let links = get_links_for_chain_id(&conn, chain_id)?;
 
     for (i, link) in links.iter().enumerate() {
+        if i == 9 {
+            database::delete_link(&conn, &link)?;
+        }
+    }
+
+    let links = get_links_for_chain_id(&conn, chain_id)?;
+
+    for (i, link) in links.iter().enumerate() {
         println!("{}. Found {:?}", i + 1, link);
     }
 
+    let streak = logic::calculate_streak(&chain, &links);
 
+    println!("Longest streak: {}", streak.longest_streak);
+    println!("Current streak: {}", streak.streak);
 
     //    let chain_name = &chain_two.name;
     //

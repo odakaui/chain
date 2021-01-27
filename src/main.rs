@@ -131,7 +131,7 @@ fn main() -> Result<()> {
             let chain = database::get_chain_for_id(&conn, chain_id)?;
             let links = database::get_links_for_chain_id(&conn, chain_id)?;
 
-            println!("{:?}", links);
+            // println!("{:?}", links);
             let streak = logic::calculate_streak(&chain, &links);
 
             println!("Current streak: {}", streak.streak);
@@ -143,7 +143,7 @@ fn main() -> Result<()> {
                 let chain_id = chain.id.unwrap();
                 let links = database::get_links_for_chain_id(&conn, chain_id)?;
 
-                println!("{:?}", links);
+                // println!("{:?}", links);
 
                 let streak = logic::calculate_streak(&chain, &links);
 

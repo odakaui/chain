@@ -38,7 +38,7 @@ pub fn calculate_streak(chain: &Chain, links: &Vec<Link>) -> Streak {
 
             for i in 0..days - 1 {
                 if logic::is_valid(&chain, &tmp_date.weekday()) {
-                    println!("{}", i);
+                    // println!("{}", i);
                     if streak > longest_streak {
                         longest_streak = streak;
                     }

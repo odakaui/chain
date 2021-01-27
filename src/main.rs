@@ -42,11 +42,10 @@ fn main() -> Result<()> {
             SubCommand::with_name("delete-link")
                 .arg(
                     Arg::with_name("date")
-                        .long("date")
-                        .short("d")
                         .value_name("DATE")
-                        .required(false)
+                        .index(2)
                         .takes_value(true)
+                        .required(true)
                         .help("Create link on date."),
                 )
                 .arg(
@@ -98,6 +97,17 @@ fn main() -> Result<()> {
                         .help("Create a custom filter."),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("delete-chain")
+                .arg(
+                    Arg::with_name("chain")
+                        .value_name("CHAIN")
+                        .required(true)
+                        .index(1)
+                        .takes_value(true)
+                        .help("Name of chain to add link to"),
+                ),
+        )
         .get_matches();
 
     let db = dirs::home_dir()
@@ -106,7 +116,7 @@ fn main() -> Result<()> {
         .join("chain_db");
     let conn = Connection::open(db)?;
 
-    database::setup_tables(&conn);
+    database::setup_tables(&conn)?;
 
     if let Some(matches) = matches.subcommand_matches("add-chain") {
         let chain_name = matches.value_of("chain").unwrap();
@@ -193,6 +203,12 @@ fn main() -> Result<()> {
         }
     }
 
+    if let Some(matches) = matches.subcommand_matches("delete-chain") {
+        let chain_name = matches.value_of("chain").unwrap();
+
+        database::delete_chain_for_name(&conn, &chain_name)?;
+    }
+
     if let Some(matches) = matches.subcommand_matches("add-link") {
         let chain_name = matches.value_of("chain").unwrap();
         let date: NaiveDate;
@@ -216,6 +232,19 @@ fn main() -> Result<()> {
             date.format("%Y-%m-%d"),
             chain_name
         );
+    }
+
+    if let Some(matches) = matches.subcommand_matches("delete-link") {
+        let date = NaiveDate::parse_from_str(matches.value_of("date").unwrap(), "%Y-%m-%d")?;
+        let chain_name = matches.value_of("chain").unwrap();
+        let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
+
+        let link = Link {
+            chain_id,
+                date,
+        };
+
+        database::delete_link(&conn, &link)?;
     }
 
     //

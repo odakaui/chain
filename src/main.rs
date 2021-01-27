@@ -28,13 +28,14 @@ fn main() -> Result<()> {
                     .help("Name of chain to add link to"),
             ),
         )
+        // TODO edit or update a LINK
+        // TODO edit or update a CHAIN
         .subcommand(
             SubCommand::with_name("add-link")
                 .arg(
                     Arg::with_name("date")
-                        .long("date")
-                        .short("d")
                         .value_name("DATE")
+                        .index(2)
                         .required(false)
                         .takes_value(true)
                         .help("Create link on date."),

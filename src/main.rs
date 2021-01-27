@@ -1,17 +1,13 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use chain::database;
-use chain::database::{
-    add_chain, delete_chain_for_name, delete_link, get_chain_for_id, get_chain_id_for_name,
-    get_chains, get_links_for_chain_id, setup_tables,
-};
 use chain::logic;
 use chain::Chain;
 use chain::ChainError;
 use chain::Link;
-use chrono::{Datelike, NaiveDate, Utc, Weekday};
+use chrono::{NaiveDate, Utc};
 use clap::{App, Arg, SubCommand};
 use dirs;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection};
 
 fn main() -> Result<()> {
     let matches = App::new("Chain")

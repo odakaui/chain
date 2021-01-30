@@ -103,6 +103,26 @@ pub fn get_chain_id_for_name(conn: &Connection, chain_name: &str) -> Result<i32>
     )?)
 }
 
+pub fn get_chain_for_name(conn: &Connection, chain_name: &str) -> Result<Chain> {
+    let chain = conn.query_row("SELECT id, name, sunday, monday, tuesday, wednesday, thursday, friday, saturday FROM chains WHERE name=?1;",
+            params![chain_name],
+            |row| {
+            Ok(Chain {
+                id: Some(row.get(0)?),
+                name: row.get(1)?,
+                sunday: row.get(2)?,
+                monday: row.get(3)?,
+                tuesday: row.get(4)?,
+                wednesday: row.get(5)?,
+                thursday: row.get(6)?,
+                friday: row.get(7)?,
+                saturday: row.get(8)?,
+                })
+            })?;
+
+    Ok(chain)
+}
+
 pub fn get_chain_for_id(conn: &Connection, chain_id: i32) -> Result<Chain> {
     let chain = conn.query_row("SELECT id, name, sunday, monday, tuesday, wednesday, thursday, friday, saturday FROM chains WHERE id=?1;",
             params![chain_id],

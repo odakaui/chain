@@ -57,8 +57,37 @@ pub fn add_chain(conn: &Connection, chain: &Chain) -> Result<()> {
 }
 
 pub fn delete_chain_for_name(conn: &Connection, chain_name: &str) -> Result<()> {
-    let chain_id = get_chain_id_for_name(&conn, chain_name)?;
-    conn.execute("DELETE FROM chains WHERE id=?", params![chain_id])?;
+    conn.execute("DELETE FROM chains WHERE name=?1", params![chain_name])?;
+
+    Ok(())
+}
+
+pub fn edit_chain_for_name(conn: &Connection, chain: &Chain, name: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE chains 
+            SET 
+                name = ?2,
+                sunday = ?3,
+                monday = ?4,
+                tuesday = ?5,
+                wednesday = ?6,
+                thursday = ?7,
+                friday = ?8,
+                saturday = ?9
+            WHERE 
+                name = ?1;",
+        params![
+            name,
+            chain.name,
+            chain.sunday,
+            chain.monday,
+            chain.tuesday,
+            chain.wednesday,
+            chain.thursday,
+            chain.friday,
+            chain.saturday
+        ],
+    )?;
 
     Ok(())
 }
@@ -103,9 +132,9 @@ pub fn get_chain_id_for_name(conn: &Connection, chain_name: &str) -> Result<i32>
     )?)
 }
 
-pub fn get_chain_for_name(conn: &Connection, chain_name: &str) -> Result<Chain> {
-    let chain = conn.query_row("SELECT id, name, sunday, monday, tuesday, wednesday, thursday, friday, saturday FROM chains WHERE name=?1;",
-            params![chain_name],
+pub fn get_chain_for_id(conn: &Connection, chain_id: i32) -> Result<Chain> {
+    let chain = conn.query_row("SELECT id, name, sunday, monday, tuesday, wednesday, thursday, friday, saturday FROM chains WHERE id=?1;",
+            params![chain_id],
             |row| {
             Ok(Chain {
                 id: Some(row.get(0)?),
@@ -123,9 +152,9 @@ pub fn get_chain_for_name(conn: &Connection, chain_name: &str) -> Result<Chain> 
     Ok(chain)
 }
 
-pub fn get_chain_for_id(conn: &Connection, chain_id: i32) -> Result<Chain> {
-    let chain = conn.query_row("SELECT id, name, sunday, monday, tuesday, wednesday, thursday, friday, saturday FROM chains WHERE id=?1;",
-            params![chain_id],
+pub fn get_chain_for_name(conn: &Connection, chain_name: &str) -> Result<Chain> {
+    let chain = conn.query_row("SELECT id, name, sunday, monday, tuesday, wednesday, thursday, friday, saturday FROM chains WHERE name=?1;",
+            params![chain_name],
             |row| {
             Ok(Chain {
                 id: Some(row.get(0)?),

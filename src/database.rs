@@ -1,7 +1,7 @@
 use crate::Chain;
 use crate::Link;
-use anyhow::{Result};
-use chrono::{NaiveDate};
+use anyhow::Result;
+use chrono::NaiveDate;
 use rusqlite::{params, Connection, NO_PARAMS};
 
 static DATE_FORMAT: &str = "%Y%m%d";

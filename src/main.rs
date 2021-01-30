@@ -1,13 +1,19 @@
 use anyhow::{bail, Result};
 use chain::database;
 use chain::logic;
+use chain::printer;
 use chain::Chain;
 use chain::ChainError;
 use chain::Link;
-use chrono::{NaiveDate, Local};
+use chrono::{Datelike, Local, NaiveDate};
 use clap::{App, Arg, SubCommand};
 use dirs;
-use rusqlite::{Connection};
+use rusqlite::Connection;
+
+static WEEKENDS: &str = "weekends";
+static WEEKDAYS: &str = "weekdays";
+static CUSTOM: &str = "custom";
+static ALL: &str = "all";
 
 fn main() -> Result<()> {
     let matches = App::new("Chain")
@@ -75,33 +81,29 @@ fn main() -> Result<()> {
                         .help("Name of chain"),
                 )
                 .arg(
-                    Arg::with_name("all")
-                        .long("all")
+                    Arg::with_name(ALL)
+                        .long(ALL)
                         .takes_value(false)
                         .requires("chain")
-                        .conflicts_with_all(&["weekend, weekend", "custom"])
-                        .help("Allow link creation on weekdays only."),
+                        .conflicts_with_all(&["weekend, weekends", "custom"]),
                 )
                 .arg(
-                    Arg::with_name("weekday")
-                        .long("weekday")
+                    Arg::with_name(WEEKDAYS)
+                        .long(WEEKDAYS)
                         .takes_value(false)
-                        .requires("chain")
-                        .help("Allow link creation on weekdays only."),
+                        .requires("chain"),
                 )
                 .arg(
-                    Arg::with_name("weekend")
-                        .long("weekend")
+                    Arg::with_name(WEEKENDS)
+                        .long(WEEKENDS)
                         .takes_value(false)
-                        .requires("chain")
-                        .help("Allow link creation on weekends only."),
+                        .requires("chain"),
                 )
                 .arg(
-                    Arg::with_name("custom")
+                    Arg::with_name(CUSTOM)
                         .long("FILTER")
                         .takes_value(true)
-                        .requires("chain")
-                        .help("Create a custom filter."),
+                        .requires("chain"),
                 ),
         )
         .subcommand(
@@ -130,55 +132,31 @@ fn main() -> Result<()> {
             let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
             let chain = database::get_chain_for_id(&conn, chain_id)?;
             let links = database::get_links_for_chain_id(&conn, chain_id)?;
-
-            // println!("{:?}", links);
             let streak = logic::calculate_streak(&chain, &links);
 
-            println!("Current streak: {}", streak.streak);
-            println!("Longest streak: {}", streak.longest_streak);
+            printer::print_streak(&streak);
         } else {
             let chains = database::get_chains(&conn)?;
 
             for chain in chains.iter() {
                 let chain_id = chain.id.unwrap();
                 let links = database::get_links_for_chain_id(&conn, chain_id)?;
-
-                // println!("{:?}", links);
-
                 let streak = logic::calculate_streak(&chain, &links);
 
-                println!("Information for chain named \"{}\"", chain.name);
-                println!("Current streak: {}", streak.streak);
-                println!("Longest streak: {}", streak.longest_streak);
+                printer::print_chain_name(&chain);
+                printer::print_streak(&streak);
                 println!("");
             }
         }
-    }
-
-    if let Some(matches) = matches.subcommand_matches("add-chain") {
+    } else if let Some(matches) = matches.subcommand_matches("add-chain") {
         let chain_name = matches.value_of("chain").unwrap();
 
-        if matches.is_present("all") {
-            let chain = Chain {
-                id: None,
-                name: chain_name.to_string(),
-                sunday: true,
-                monday: true,
-                tuesday: true,
-                wednesday: true,
-                thursday: true,
-                friday: true,
-                saturday: true,
-            };
+        let chain: Chain;
+        let filter: &str;
 
-            database::add_chain(&conn, &chain)?;
-
-            println!(
-                "Created a chain named \"{}\" with a filter of \"all\"",
-                chain_name
-            );
-        } else if matches.is_present("weekday") {
-            let chain = Chain {
+        if matches.is_present(WEEKDAYS) {
+            filter = WEEKDAYS;
+            chain = Chain {
                 id: None,
                 name: chain_name.to_string(),
                 sunday: false,
@@ -189,15 +167,9 @@ fn main() -> Result<()> {
                 friday: true,
                 saturday: false,
             };
-
-            database::add_chain(&conn, &chain)?;
-
-            println!(
-                "Created a chain named \"{}\" with a filter of \"weekday\"",
-                chain_name
-            );
-        } else if matches.is_present("weekend") {
-            let chain = Chain {
+        } else if matches.is_present(WEEKENDS) {
+            filter = WEEKENDS;
+            chain = Chain {
                 id: None,
                 name: chain_name.to_string(),
                 sunday: true,
@@ -208,17 +180,11 @@ fn main() -> Result<()> {
                 friday: false,
                 saturday: true,
             };
-
-            database::add_chain(&conn, &chain)?;
-
-            println!(
-                "Created a chain named \"{}\" with a filter of \"weekend\"",
-                chain_name
-            );
         } else if matches.is_present("custom") {
             todo!()
         } else {
-            let chain = Chain {
+            filter = ALL;
+            chain = Chain {
                 id: None,
                 name: chain_name.to_string(),
                 sunday: true,
@@ -229,17 +195,12 @@ fn main() -> Result<()> {
                 friday: true,
                 saturday: true,
             };
-
-            database::add_chain(&conn, &chain)?;
-
-            println!(
-                "Created a chain named \"{}\" with a filter of \"all\"",
-                chain_name
-            );
         }
-    }
 
-    if let Some(matches) = matches.subcommand_matches("delete-chain") {
+        database::add_chain(&conn, &chain)?;
+
+        println!("Added \"{}\" with a filter of \"{}\"", &chain.name, filter);
+    } else if let Some(matches) = matches.subcommand_matches("delete-chain") {
         let chain_name = matches.value_of("chain").unwrap();
         let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
         let links = database::get_links_for_chain_id(&conn, chain_id)?;
@@ -249,15 +210,16 @@ fn main() -> Result<()> {
         }
 
         database::delete_chain_for_name(&conn, &chain_name)?;
-    }
 
-    if let Some(matches) = matches.subcommand_matches("add-link") {
+        println!("Deleted \"{}\"", &chain_name);
+    } else if let Some(matches) = matches.subcommand_matches("add-link") {
         let chain_name = matches.value_of("chain").unwrap();
         let date: NaiveDate;
+
         if matches.is_present("date") {
             date = NaiveDate::parse_from_str(matches.value_of("date").unwrap(), "%Y-%m-%d")?;
         } else {
-            date = Local::today().naive_utc();
+            date = Local::today().naive_local();
         }
 
         let chain_id = match database::get_chain_id_for_name(&conn, &chain_name) {
@@ -270,18 +232,24 @@ fn main() -> Result<()> {
 
         if !logic::check_link(&chain, &link) {
             bail!(
-                "{} is not a valid day based on the chain's filter",
-                date.format("%Y-%m-%d")
+                "Failed to add the link for \"{}\" to \"{}\", because the filter does not allow links to be created on \"{}\"",
+                &date.format("%Y-%m-%d"),
+                &chain.name,
+                &date.weekday()
             );
         }
 
         database::add_link(&conn, &link)?;
 
+        let links = database::get_links_for_chain_id(&conn, chain_id)?;
+        let streak = logic::calculate_streak(&chain, &links);
+
         println!(
-            "Added link for \"{}\" to chain \"{}\"",
+            "Added link for \"{}\" to \"{}\"",
             date.format("%Y-%m-%d"),
             chain_name
         );
+        printer::print_streak(&streak);
     }
 
     if let Some(matches) = matches.subcommand_matches("delete-link") {

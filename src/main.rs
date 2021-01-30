@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use chain::database;
 use chain::logic;
 use chain::printer;
@@ -30,6 +30,7 @@ fn main() -> Result<()> {
                     .help("The chain's name"),
             ),
         )
+        .subcommand(SubCommand::with_name("today"))
         .subcommand(
             SubCommand::with_name("add-chain")
                 .arg(
@@ -186,6 +187,29 @@ fn main() -> Result<()> {
             for chain in chains.iter() {
                 let chain_id = chain.id.unwrap();
                 let links = database::get_links_for_chain_id(&conn, chain_id)?;
+                let streak = logic::calculate_streak(&chain, &links);
+
+                printer::print_chain_name(&chain);
+                printer::print_streak(&streak);
+                println!("");
+            }
+        }
+    } else if let Some(_) = matches.subcommand_matches("today") {
+        let chains = database::get_chains(&conn)?;
+
+        for chain in chains.iter() {
+            let chain_id = chain.id.unwrap();
+            let links = database::get_links_for_chain_id(&conn, chain_id)?;
+            let latest_link = links.last();
+
+            let today = Local::today().naive_local();
+            if latest_link.is_some()
+                && logic::is_valid(&chain, &today.weekday())
+                && today
+                    .signed_duration_since(latest_link.unwrap().date)
+                    .num_days()
+                    > 0
+            {
                 let streak = logic::calculate_streak(&chain, &links);
 
                 printer::print_chain_name(&chain);

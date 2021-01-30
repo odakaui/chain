@@ -30,7 +30,15 @@ fn main() -> Result<()> {
                     .help("The chain's name"),
             ),
         )
-        .subcommand(SubCommand::with_name("today"))
+        .subcommand(
+            SubCommand::with_name("today").arg(
+                Arg::with_name("number")
+                    .long("number")
+                    .short("n")
+                    .required(false)
+                    .help("Print output as a number instead of list"),
+            ),
+        )
         .subcommand(
             SubCommand::with_name("add-chain")
                 .arg(
@@ -122,8 +130,6 @@ fn main() -> Result<()> {
                 ),
         )
         .subcommand(SubCommand::with_name("list-chains"))
-        // TODO edit or update a LINK
-        // TODO edit or update a CHAIN
         .subcommand(
             SubCommand::with_name("add-link")
                 .arg(
@@ -194,8 +200,11 @@ fn main() -> Result<()> {
                 println!("");
             }
         }
-    } else if let Some(_) = matches.subcommand_matches("today") {
+    } else if let Some(matches) = matches.subcommand_matches("today") {
+        // TODO cleanup "today"
         let chains = database::get_chains(&conn)?;
+        let mut number = 0;
+        let mut total = 0;
 
         for chain in chains.iter() {
             let chain_id = chain.id.unwrap();
@@ -210,12 +219,35 @@ fn main() -> Result<()> {
                     .num_days()
                     > 0
             {
-                let streak = logic::calculate_streak(&chain, &links);
+                if matches.is_present("number") {
+                    number += 1;
+                } else {
+                    let streak = logic::calculate_streak(&chain, &links);
 
-                printer::print_chain_name(&chain);
-                printer::print_streak(&streak);
-                println!("");
+                    printer::print_chain_name(&chain);
+                    printer::print_streak(&streak);
+                    println!("");
+                }
+
+                total += 1;
+            } else if latest_link.is_none() && logic::is_valid(&chain, &today.weekday()) {
+                if matches.is_present("number") {
+                    number += 1;
+                } else {
+                    printer::print_chain_name(&chain);
+                    println!("Current streak: 0");
+                    println!("Longest streak: 0");
+                    println!("");
+                }
+
+                total += 1;
             }
+        }
+
+        if matches.is_present("number") {
+            println!("{}", number);
+        } else if total == 0 {
+            println!("Congratulations, you have completed all of your chains for today");
         }
     } else if let Some(matches) = matches.subcommand_matches("add-chain") {
         let chain_name = matches.value_of("chain").unwrap();

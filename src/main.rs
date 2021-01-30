@@ -27,48 +27,8 @@ fn main() -> Result<()> {
                     .required(false)
                     .index(1)
                     .takes_value(true)
-                    .help("Name of chain to add link to"),
+                    .help("The chain's name"),
             ),
-        )
-        // TODO edit or update a LINK
-        // TODO edit or update a CHAIN
-        .subcommand(
-            SubCommand::with_name("add-link")
-                .arg(
-                    Arg::with_name("date")
-                        .value_name("DATE")
-                        .index(2)
-                        .required(false)
-                        .takes_value(true)
-                        .help("Create link on date."),
-                )
-                .arg(
-                    Arg::with_name("chain")
-                        .value_name("CHAIN")
-                        .required(true)
-                        .index(1)
-                        .takes_value(true)
-                        .help("Name of chain to add link to"),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("delete-link")
-                .arg(
-                    Arg::with_name("date")
-                        .value_name("DATE")
-                        .index(2)
-                        .takes_value(true)
-                        .required(true)
-                        .help("Create link on date."),
-                )
-                .arg(
-                    Arg::with_name("chain")
-                        .value_name("CHAIN")
-                        .required(true)
-                        .index(1)
-                        .takes_value(true)
-                        .help("Name of chain to add link to"),
-                ),
         )
         .subcommand(
             SubCommand::with_name("add-chain")
@@ -78,14 +38,14 @@ fn main() -> Result<()> {
                         .index(1)
                         .required(true)
                         .takes_value(true)
-                        .help("Name of chain"),
+                        .help("The chain's name"),
                 )
                 .arg(
                     Arg::with_name(ALL)
                         .long(ALL)
                         .takes_value(false)
                         .requires("chain")
-                        .conflicts_with_all(&["weekend, weekends", "custom"]),
+                        .conflicts_with_all(&["weekend, weekends", CUSTOM]),
                 )
                 .arg(
                     Arg::with_name(WEEKDAYS)
@@ -113,8 +73,93 @@ fn main() -> Result<()> {
                     .required(true)
                     .index(1)
                     .takes_value(true)
-                    .help("Name of chain to add link to"),
+                    .help("The chain's name"),
             ),
+        )
+        .subcommand(
+            SubCommand::with_name("edit-chain")
+                .arg(
+                    Arg::with_name("target")
+                        .value_name("TARGET")
+                        .required(true)
+                        .index(1)
+                        .takes_value(true)
+                        .help("The chain's current name"),
+                )
+                .arg(
+                    Arg::with_name("chain")
+                        .value_name("CHAIN")
+                        .required(true)
+                        .index(2)
+                        .takes_value(true)
+                        .help("The chain's new name"),
+                )
+                .arg(
+                    Arg::with_name(ALL)
+                        .long(ALL)
+                        .takes_value(false)
+                        .requires("chain")
+                        .conflicts_with_all(&["weekend, weekends", CUSTOM]),
+                )
+                .arg(
+                    Arg::with_name(WEEKDAYS)
+                        .long(WEEKDAYS)
+                        .takes_value(false)
+                        .requires("chain"),
+                )
+                .arg(
+                    Arg::with_name(WEEKENDS)
+                        .long(WEEKENDS)
+                        .takes_value(false)
+                        .requires("chain"),
+                )
+                .arg(
+                    Arg::with_name(CUSTOM)
+                        .long("FILTER")
+                        .takes_value(true)
+                        .requires("chain"),
+                ),
+        )
+        .subcommand(SubCommand::with_name("list-chains"))
+        // TODO edit or update a LINK
+        // TODO edit or update a CHAIN
+        .subcommand(
+            SubCommand::with_name("add-link")
+                .arg(
+                    Arg::with_name("date")
+                        .value_name("DATE")
+                        .index(2)
+                        .required(false)
+                        .takes_value(true)
+                        .help("Link date"),
+                )
+                .arg(
+                    Arg::with_name("chain")
+                        .value_name("CHAIN")
+                        .required(true)
+                        .index(1)
+                        .takes_value(true)
+                        .help("The chain's name"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("delete-link")
+                .arg(
+                    Arg::with_name("date")
+                        .value_name("DATE")
+                        .index(2)
+                        .takes_value(true)
+                        .required(true)
+                        .help("Link date"),
+                )
+                .arg(
+                    Arg::with_name("chain")
+                        .value_name("CHAIN")
+                        .required(true)
+                        .index(1)
+                        .takes_value(true)
+                        .help("The chain's name"),
+                ),
         )
         .get_matches();
 
@@ -180,7 +225,7 @@ fn main() -> Result<()> {
                 friday: false,
                 saturday: true,
             };
-        } else if matches.is_present("custom") {
+        } else if matches.is_present(CUSTOM) {
             todo!()
         } else {
             filter = ALL;
@@ -212,6 +257,61 @@ fn main() -> Result<()> {
         database::delete_chain_for_name(&conn, &chain_name)?;
 
         println!("Deleted \"{}\"", &chain_name);
+    } else if let Some(matches) = matches.subcommand_matches("edit-chain") {
+        let target_name = matches.value_of("target").unwrap();
+        let chain_name = matches.value_of("chain").unwrap();
+
+        let chain: Chain;
+
+        if matches.is_present(WEEKDAYS) {
+            chain = Chain {
+                id: None,
+                name: chain_name.to_string(),
+                sunday: false,
+                monday: true,
+                tuesday: true,
+                wednesday: true,
+                thursday: true,
+                friday: true,
+                saturday: false,
+            };
+        } else if matches.is_present(WEEKENDS) {
+            chain = Chain {
+                id: None,
+                name: chain_name.to_string(),
+                sunday: true,
+                monday: false,
+                tuesday: false,
+                wednesday: false,
+                thursday: false,
+                friday: false,
+                saturday: true,
+            };
+        } else if matches.is_present(CUSTOM) {
+            todo!()
+        } else {
+            chain = Chain {
+                id: None,
+                name: chain_name.to_string(),
+                sunday: true,
+                monday: true,
+                tuesday: true,
+                wednesday: true,
+                thursday: true,
+                friday: true,
+                saturday: true,
+            };
+        }
+
+        database::edit_chain_for_name(&conn, &chain, &target_name)?;
+
+        println!("Updated \"{}\"", &chain.name);
+    } else if let Some(_) = matches.subcommand_matches("list-chains") {
+        let chains = database::get_chains(&conn)?;
+
+        for chain in chains.iter() {
+            println!("{}", chain.name);
+        }
     } else if let Some(matches) = matches.subcommand_matches("add-link") {
         let chain_name = matches.value_of("chain").unwrap();
         let date: NaiveDate;
@@ -250,9 +350,7 @@ fn main() -> Result<()> {
             chain_name
         );
         printer::print_streak(&streak);
-    }
-
-    if let Some(matches) = matches.subcommand_matches("delete-link") {
+    } else if let Some(matches) = matches.subcommand_matches("delete-link") {
         let date = NaiveDate::parse_from_str(matches.value_of("date").unwrap(), "%Y-%m-%d")?;
         let chain_name = matches.value_of("chain").unwrap();
         let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
@@ -260,6 +358,12 @@ fn main() -> Result<()> {
         let link = Link { chain_id, date };
 
         database::delete_link(&conn, &link)?;
+
+        println!(
+            "Deleted link for \"{}\" from \"{}\"",
+            date.format("%Y-%m-%d"),
+            chain_name
+        );
     }
 
     //

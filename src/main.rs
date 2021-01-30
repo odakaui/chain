@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use chain::database;
 use chain::logic;
 use chain::printer;

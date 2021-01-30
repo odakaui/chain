@@ -9,6 +9,7 @@ use chrono::{Datelike, Local, NaiveDate};
 use clap::{App, Arg, SubCommand};
 use dirs;
 use rusqlite::Connection;
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 static WEEKENDS: &str = "weekends";
 static WEEKDAYS: &str = "weekdays";
@@ -17,7 +18,7 @@ static ALL: &str = "all";
 
 fn main() -> Result<()> {
     let matches = App::new("Chain")
-        .version("0.1.0")
+        .version(VERSION)
         .author("Odaka Ui <31593320+odakaui@users.noreply.github.com>")
         .about("A simple habit tracking app.")
         .subcommand(

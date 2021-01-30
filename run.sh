@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-rm ~/.chain/chain_db
+rm $HOME/.chain/chain_db
 cargo run

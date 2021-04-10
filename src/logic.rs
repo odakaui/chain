@@ -16,7 +16,8 @@ pub fn calculate_streak(chain: &Chain, links: &Vec<Link>) -> Streak {
             let between = date
                 .unwrap()
                 .signed_duration_since(prev_date.unwrap())
-                .num_days() - 1;
+                .num_days()
+                - 1;
 
             if between > 0 {
                 if streak > longest_streak {

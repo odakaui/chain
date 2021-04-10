@@ -32,7 +32,12 @@ pub fn print_add(chain: &Chain, link: &Link) {
 }
 
 pub fn print_mv(chain: &Chain, current: &Link, new: &Link) {
-    println!("Update link from \"{}\" to \"{}\" for \"{}\"", current.date.format("%Y-%m-%d"), new.date.format("%Y-%m-%d"), chain.name);
+    println!(
+        "Update link from \"{}\" to \"{}\" for \"{}\"",
+        current.date.format("%Y-%m-%d"),
+        new.date.format("%Y-%m-%d"),
+        chain.name
+    );
 }
 
 pub fn print_rm(chain: &Chain, link: &Link) {

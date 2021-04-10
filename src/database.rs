@@ -1,16 +1,16 @@
-use crate::Chain;
-use crate::Link;
+use super::Chain;
+use super::Link;
 use anyhow::Result;
 use chrono::NaiveDate;
-use rusqlite::{params, Connection, NO_PARAMS};
+use rusqlite::{params, Connection};
 
-static FORMAT: &str = "%Y-%m-%d";
+use super::FORMAT;
 
 pub fn setup_tables(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS chains (
                     id              INTEGER PRIMARY KEY,
-                    name            TEXT NOT NULL UNIQUE,
+                    name            TEXT NOT NULL UNIQUE
                 )",
         params![],
     )?;
@@ -32,9 +32,7 @@ pub fn add_chain(conn: &Connection, chain: &Chain) -> Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO chains (name)
                 VALUES (?1)",
-        params![
-            chain.name,
-        ],
+        params![chain.name,],
     )?;
 
     Ok(())
@@ -53,10 +51,7 @@ pub fn edit_chain_for_name(conn: &Connection, chain: &Chain, name: &str) -> Resu
                 name = ?2,
             WHERE 
                 name = ?1;",
-        params![
-            name,
-            chain.name
-        ],
+        params![name, chain.name],
     )?;
 
     Ok(())
@@ -66,11 +61,11 @@ pub fn get_chains(conn: &Connection) -> Result<Vec<Chain>> {
     let mut statement = conn.prepare(
         "SELECT 
                 id, 
-                name, 
+                name
             FROM chains
             ORDER BY name ASC;",
     )?;
-    let chain_iter = statement.query_map(NO_PARAMS, |row| {
+    let chain_iter = statement.query_map([], |row| {
         Ok(Chain {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -89,27 +84,31 @@ pub fn get_chain_id_for_name(conn: &Connection, chain_name: &str) -> Result<i32>
 }
 
 pub fn get_chain_for_id(conn: &Connection, chain_id: i32) -> Result<Chain> {
-    let chain = conn.query_row("SELECT id, name, sunday, monday, tuesday, wednesday, thursday, friday, saturday FROM chains WHERE id=?1;",
-            params![chain_id],
-            |row| {
+    let chain = conn.query_row(
+        "SELECT id, name FROM chains WHERE id=?1;",
+        params![chain_id],
+        |row| {
             Ok(Chain {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                })
-            })?;
+            })
+        },
+    )?;
 
     Ok(chain)
 }
 
 pub fn get_chain_for_name(conn: &Connection, chain_name: &str) -> Result<Chain> {
-    let chain = conn.query_row("SELECT id, name, sunday, monday, tuesday, wednesday, thursday, friday, saturday FROM chains WHERE name=?1;",
-            params![chain_name],
-            |row| {
+    let chain = conn.query_row(
+        "SELECT id, name FROM chains WHERE name=?1;",
+        params![chain_name],
+        |row| {
             Ok(Chain {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                })
-            })?;
+            })
+        },
+    )?;
 
     Ok(chain)
 }
@@ -136,7 +135,11 @@ pub fn delete_link(conn: &Connection, link: &Link) -> Result<()> {
 pub fn update(conn: &Connection, current: &Link, new: &Link) -> Result<()> {
     conn.execute(
         "UPDATE links SET date = ?1 WHERE chain_id = ?2 AND date = ?3",
-        params![new.date.format(FORMAT).to_string(), current.chain_id, current.date.format(FORMAT).to_string()],
+        params![
+            new.date.format(FORMAT).to_string(),
+            current.chain_id,
+            current.date.format(FORMAT).to_string()
+        ],
     )?;
 
     Ok(())

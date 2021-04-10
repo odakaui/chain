@@ -1,12 +1,18 @@
 use anyhow::{anyhow, Result};
-use chain::database;
-use chain::logic;
-use chain::printer;
-use chain::{Chain, Link, Streak};
-use chrono::{NaiveDate, Local};
+use chrono::{Local, NaiveDate};
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use dirs;
 use rusqlite::Connection;
+use std::fs;
+
+pub use chain_error::ChainError;
+pub use structs::{Chain, Link, Streak};
+
+pub mod chain_error;
+pub mod database;
+pub mod logic;
+pub mod printer;
+pub mod structs;
 
 // Cargo Information
 const AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS");
@@ -72,8 +78,14 @@ fn mv(conn: &Connection, m: &ArgMatches) -> Result<()> {
     let id = database::get_chain_id_for_name(&conn, &name)?;
     let chain = database::get_chain_for_name(&conn, &name)?;
 
-    let current = Link { chain_id: id, date: current_date };
-    let new = Link { chain_id: id, date: new_date };
+    let current = Link {
+        chain_id: id,
+        date: current_date,
+    };
+    let new = Link {
+        chain_id: id,
+        date: new_date,
+    };
 
     database::update(conn, &current, &new)?;
     printer::print_mv(&chain, &current, &new);
@@ -115,8 +127,8 @@ fn rename_chain(conn: &Connection, m: &ArgMatches) -> Result<()> {
     let new = m.value_of(NEW).unwrap();
 
     let chain = Chain {
-       id: -1,
-       name: current.to_string(),
+        id: -1,
+        name: current.to_string(),
     };
 
     database::edit_chain_for_name(&conn, &chain, &new)?;
@@ -143,7 +155,6 @@ fn rm_chain(conn: &Connection, m: &ArgMatches) -> Result<()> {
     Ok(())
 }
 
-
 fn due(conn: &Connection, m: &ArgMatches) -> Result<()> {
     let chains = database::get_chains(&conn)?;
 
@@ -157,9 +168,9 @@ fn due(conn: &Connection, m: &ArgMatches) -> Result<()> {
         let today = Local::today().naive_local();
 
         if latest.is_some() {
-            // Check if the chain has a link for today. 
+            // Check if the chain has a link for today.
             // signed_duration_since will be zero if there is a link for today.
-            if today.signed_duration_since(latest.unwrap().date).num_days() > 0 {   
+            if today.signed_duration_since(latest.unwrap().date).num_days() > 0 {
                 let streak = logic::calculate_streak(&chain, &links);
                 due.push(streak);
             }
@@ -175,7 +186,7 @@ fn due(conn: &Connection, m: &ArgMatches) -> Result<()> {
     }
 
     if m.is_present(MACHINE) {
-        printer::print_streaks_machine(&due); 
+        printer::print_streaks_machine(&due);
     } else {
         printer::print_streaks(&due);
     }
@@ -230,111 +241,126 @@ fn main() -> Result<()> {
         .about(DESCRIPTION)
         .subcommand(
             SubCommand::with_name(ADD)
+                .about("add a link to CHAIN.")
                 .arg(
                     Arg::with_name("CHAIN")
                         .required(true)
                         .index(1)
-                        .help("the name of the chain")
+                        .help("the name of the chain"),
                 )
                 .arg(
                     Arg::with_name("DATE")
                         .required(false)
                         .index(2)
-                        .help("the date to add")
-                )
+                        .help("the date to add"),
+                ),
         )
         .subcommand(
             SubCommand::with_name(MV)
+                .about("change the date of a link on CHAIN.")
                 .arg(
                     Arg::with_name(CHAIN)
                         .required(true)
                         .index(1)
-                        .help("the name of the chain")
-                    )
-                .arg(Arg::with_name(CURRENT)
-                    .required(true)
-                    .index(2)
-                    .help("the current date")
-                    )
-                .arg(Arg::with_name(NEW)
-                    .required(true)
-                    .index(3)
-                    .help("the new date")
-                    )
+                        .help("the name of the chain"),
                 )
+                .arg(
+                    Arg::with_name(CURRENT)
+                        .required(true)
+                        .index(2)
+                        .help("the current date"),
+                )
+                .arg(
+                    Arg::with_name(NEW)
+                        .required(true)
+                        .index(3)
+                        .help("the new date"),
+                ),
+        )
         .subcommand(
             SubCommand::with_name(RM)
+                .about("delete a link from CHAIN")
                 .arg(
                     Arg::with_name("CHAIN")
                         .required(true)
                         .index(1)
-                        .help("the name of the chain")
+                        .help("the name of the chain"),
                 )
                 .arg(
                     Arg::with_name("DATE")
                         .required(true)
                         .index(2)
-                        .help("the date to delete")
-                )
+                        .help("the date to delete"),
+                ),
         )
         .subcommand(
-            SubCommand::with_name(ADD_CHAIN).arg(
-                Arg::with_name("CHAIN")
-                    .index(1)
-                    .required(true)
-                    .help("the name of the chain")
-            )
+            SubCommand::with_name(ADD_CHAIN)
+                .about("create a new CHAIN.")
+                .arg(
+                    Arg::with_name("CHAIN")
+                        .index(1)
+                        .required(true)
+                        .help("the name of the chain"),
+                ),
         )
         .subcommand(
             SubCommand::with_name(RENAME_CHAIN)
+                .about("change the name of CHAIN.")
                 .arg(
                     Arg::with_name(CURRENT)
                         .required(true)
                         .index(1)
-                        .help("the current name of the chain")
+                        .help("the current name of the chain"),
                 )
                 .arg(
                     Arg::with_name(NEW)
                         .required(true)
                         .index(2)
-                        .help("the new name of the chain")
-                )
+                        .help("the new name of the chain"),
+                ),
         )
         .subcommand(
-            SubCommand::with_name(RM_CHAIN).arg(
+            SubCommand::with_name(RM_CHAIN).about("delete CHAIN.").arg(
                 Arg::with_name("CHAIN")
                     .required(true)
                     .index(1)
-                    .help("the name of the chain")
-            )
+                    .help("the name of the chain"),
+            ),
         )
         .subcommand(
-            SubCommand::with_name(DUE).arg(
-                Arg::with_name("machine")
-                    .long("machine")
-                    .short("m")
-                    .required(false)
-                    .help("provide output in a machine readable format")
-            )
+            SubCommand::with_name(DUE)
+                .about("list CHAINS which are due today.")
+                .arg(
+                    Arg::with_name("machine")
+                        .long("machine")
+                        .short("m")
+                        .required(false)
+                        .help("provide output in a machine readable format"),
+                ),
         )
-        .subcommand(SubCommand::with_name(LS))
+        .subcommand(SubCommand::with_name(LS).about("list all CHAINS."))
         .subcommand(
-            SubCommand::with_name(STATUS).arg(
-                Arg::with_name("CHAIN")
-                    .required(false)
-                    .index(1)
-                    .help("the name of the chain")
-            )
+            SubCommand::with_name(STATUS)
+                .about("print the status of CHAIN or all CHAINS.")
+                .arg(
+                    Arg::with_name("CHAIN")
+                        .required(false)
+                        .index(1)
+                        .help("the name of the chain"),
+                ),
         )
         .get_matches();
 
-
     // Setup the database
-    let db = dirs::home_dir()
-        .ok_or(anyhow!("Failed to locate the users home directory"))?
-        .join(".c")
-        .join("c.db");
-    let conn = Connection::open(db)?;
+    let home_dir = dirs::home_dir().ok_or(anyhow!("Failed to locate the users home directory"))?;
+    let config_dir = home_dir.join(".c");
+    let database = config_dir.join("c.db");
+
+    if !config_dir.exists() {
+        fs::create_dir(config_dir)?;
+    }
+
+    let conn = Connection::open(database)?;
 
     database::setup_tables(&conn)?;
 
@@ -351,7 +377,6 @@ fn main() -> Result<()> {
         (STATUS, Some(m)) => status(&conn, m)?,
         _ => return Err(anyhow!("Failed to parse subcommand")),
     };
-
 
     Ok(())
 }

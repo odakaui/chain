@@ -1,495 +1,391 @@
-use anyhow::{bail, Result};
-use chain::database;
-use chain::logic;
-use chain::printer;
-use chain::Chain;
-use chain::ChainError;
-use chain::Link;
-use chrono::{Datelike, Local, NaiveDate};
-use clap::{App, Arg, SubCommand};
+use anyhow::{anyhow, Result};
+use chrono::{Local, NaiveDate};
+use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use dirs;
 use rusqlite::Connection;
+use std::fs;
+
+pub use structs::{Chain, Day, Link, Streak};
+
+pub mod chain_error;
+pub mod database;
+pub mod logic;
+pub mod printer;
+pub mod structs;
+
+// Cargo Information
+const AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS");
+const DESCRIPTION: &'static str = env!("CARGO_PKG_DESCRIPTION");
+const NAME: &'static str = env!("CARGO_PKG_NAME");
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-static WEEKENDS: &str = "weekends";
-static WEEKDAYS: &str = "weekdays";
-static CUSTOM: &str = "custom";
-static ALL: &str = "all";
+// Link Manipulation Commands
+const ADD: &'static str = "add";
+const MV: &'static str = "mv";
+const RM: &'static str = "rm";
+
+// Chain Manipulation Commands
+const ADD_CHAIN: &'static str = "add-chain";
+const RENAME_CHAIN: &'static str = "rename-chain";
+const RM_CHAIN: &'static str = "rm-chain";
+
+// Chain Information Commands
+const DUE: &'static str = "due";
+const LS: &'static str = "ls";
+const STATUS: &'static str = "status";
+
+// Argument Names
+const CHAIN: &'static str = "CHAIN";
+const MACHINE: &'static str = "machine";
+const CURRENT: &'static str = "CURRENT";
+const NEW: &'static str = "NEW";
+const DATE: &'static str = "DATE";
+
+const FORMAT: &'static str = "%Y-%m-%d";
+
+fn add(conn: &Connection, m: &ArgMatches) -> Result<()> {
+    let name = m.value_of(CHAIN).unwrap();
+
+    let date = if m.is_present(DATE) {
+        NaiveDate::parse_from_str(m.value_of(DATE).unwrap(), FORMAT)?
+    } else {
+        Local::today().naive_local()
+    };
+
+    let id = database::get_chain_id_for_name(&conn, &name)?;
+    let chain = database::get_chain_for_id(&conn, id)?;
+
+    let link = Link { chain_id: id, date };
+
+    database::add_link(&conn, &link)?;
+
+    let links = database::get_links_for_chain_id(&conn, id)?;
+
+    let streak = logic::calculate_streak(&chain, &links);
+    let days = logic::create_days(&links);
+
+    printer::print_add(&chain, &link);
+    printer::print_streak(&streak, &days);
+
+    Ok(())
+}
+
+fn mv(conn: &Connection, m: &ArgMatches) -> Result<()> {
+    let name = m.value_of(CHAIN).unwrap();
+
+    let current_date = NaiveDate::parse_from_str(m.value_of(CURRENT).unwrap(), FORMAT)?;
+    let new_date = NaiveDate::parse_from_str(m.value_of(NEW).unwrap(), FORMAT)?;
+
+    let id = database::get_chain_id_for_name(&conn, &name)?;
+    let chain = database::get_chain_for_name(&conn, &name)?;
+
+    let current = Link {
+        chain_id: id,
+        date: current_date,
+    };
+    let new = Link {
+        chain_id: id,
+        date: new_date,
+    };
+
+    database::update(conn, &current, &new)?;
+    printer::print_mv(&chain, &current, &new);
+
+    Ok(())
+}
+
+fn rm(conn: &Connection, m: &ArgMatches) -> Result<()> {
+    let date = NaiveDate::parse_from_str(m.value_of(DATE).unwrap(), FORMAT)?;
+    let name = m.value_of(CHAIN).unwrap();
+
+    let id = database::get_chain_id_for_name(&conn, &name)?;
+    let chain = database::get_chain_for_name(&conn, &name)?;
+
+    let link = Link { chain_id: id, date };
+
+    database::delete_link(&conn, &link)?;
+    printer::print_rm(&chain, &link);
+
+    Ok(())
+}
+
+fn add_chain(conn: &Connection, m: &ArgMatches) -> Result<()> {
+    let name = m.value_of(CHAIN).unwrap();
+
+    let chain = Chain {
+        id: -1,
+        name: name.to_string(),
+    };
+
+    database::add_chain(&conn, &chain)?;
+    printer::print_add_chain(&chain);
+
+    Ok(())
+}
+
+fn rename_chain(conn: &Connection, m: &ArgMatches) -> Result<()> {
+    let current = m.value_of(CURRENT).unwrap();
+    let new = m.value_of(NEW).unwrap();
+
+    let chain = Chain {
+        id: -1,
+        name: current.to_string(),
+    };
+
+    database::edit_chain_for_name(&conn, &chain, &new)?;
+    printer::print_rename_chain(&chain, &new);
+
+    Ok(())
+}
+
+fn rm_chain(conn: &Connection, m: &ArgMatches) -> Result<()> {
+    let name = m.value_of(CHAIN).unwrap();
+
+    let id = database::get_chain_id_for_name(&conn, &name)?;
+    let chain = database::get_chain_for_name(&conn, &name)?;
+
+    let links = database::get_links_for_chain_id(&conn, id)?;
+
+    for link in links.iter() {
+        database::delete_link(&conn, &link)?;
+    }
+
+    database::delete_chain_for_name(&conn, &name)?;
+    printer::print_rm_chain(&chain);
+
+    Ok(())
+}
+
+fn due(conn: &Connection, m: &ArgMatches) -> Result<()> {
+    let chains = database::get_chains(&conn)?;
+
+    let mut due: Vec<(Streak, Vec<Day>)> = Vec::new();
+
+    for chain in chains.iter() {
+        let id = chain.id;
+        let links = database::get_links_for_chain_id(&conn, id as i32)?;
+
+        let latest = links.last();
+        let today = Local::today().naive_local();
+
+        if latest.is_some() {
+            // Check if the chain has a link for today.
+            // signed_duration_since will be zero if there is a link for today.
+            if today.signed_duration_since(latest.unwrap().date).num_days() > 0 {
+                let streak = logic::calculate_streak(&chain, &links);
+                let days = logic::create_days(&links);
+
+                due.push((streak, days));
+            }
+        } else {
+            let streak = Streak {
+                name: chain.name.to_string(),
+                streak: 0,
+                longest_streak: 0,
+            };
+
+            let days = logic::create_dummy_days();
+
+            due.push((streak, days));
+        }
+    }
+
+    if m.is_present(MACHINE) {
+        printer::print_streaks_machine(&due);
+    } else {
+        printer::print_streaks(&due);
+    }
+
+    Ok(())
+}
+
+fn ls(conn: &Connection, _m: &ArgMatches) -> Result<()> {
+    let chains = database::get_chains(&conn)?;
+
+    printer::print_ls(&chains);
+
+    Ok(())
+}
+
+fn status(conn: &Connection, m: &ArgMatches) -> Result<()> {
+    // print the status of a single chain if the name of the chain is provided.
+    if m.is_present(CHAIN) {
+        let name = m.value_of(CHAIN).unwrap();
+
+        let id = database::get_chain_id_for_name(&conn, &name)?;
+        let chain = database::get_chain_for_id(&conn, id)?;
+        let links = database::get_links_for_chain_id(&conn, id)?;
+
+        let streak = logic::calculate_streak(&chain, &links);
+        let days = logic::create_days(&links);
+
+        printer::print_streak(&streak, &days);
+
+    } else {
+        let chains = database::get_chains(&conn)?;
+
+        let mut streaks: Vec<(Streak, Vec<Day>)> = Vec::new();
+
+        for chain in chains.iter() {
+            let chain_id = chain.id;
+            let links = database::get_links_for_chain_id(&conn, chain_id as i32)?;
+
+            let streak = logic::calculate_streak(&chain, &links);
+            let days = logic::create_days(&links);
+
+            streaks.push((streak, days));
+        }
+
+        printer::print_streaks(&streaks);
+    }
+
+    Ok(())
+}
 
 fn main() -> Result<()> {
-    let matches = App::new("Chain")
+    let matches = App::new(NAME)
+        .setting(AppSettings::ArgRequiredElseHelp)
         .version(VERSION)
-        .author("Odaka Ui <31593320+odakaui@users.noreply.github.com>")
-        .about("A simple habit tracking app.")
+        .author(AUTHORS)
+        .about(DESCRIPTION)
         .subcommand(
-            SubCommand::with_name("streak").arg(
-                Arg::with_name("chain")
-                    .value_name("CHAIN")
-                    .required(false)
-                    .index(1)
-                    .takes_value(true)
-                    .help("The chain's name"),
-            ),
-        )
-        .subcommand(
-            SubCommand::with_name("today").arg(
-                Arg::with_name("number")
-                    .long("number")
-                    .short("n")
-                    .required(false)
-                    .help("Print output as a number instead of list"),
-            ),
-        )
-        .subcommand(
-            SubCommand::with_name("add-chain")
+            SubCommand::with_name(ADD)
+                .about("add a link to CHAIN.")
                 .arg(
-                    Arg::with_name("chain")
-                        .value_name("CHAIN")
-                        .index(1)
+                    Arg::with_name("CHAIN")
                         .required(true)
-                        .takes_value(true)
-                        .help("The chain's name"),
+                        .index(1)
+                        .help("the name of the chain"),
                 )
                 .arg(
-                    Arg::with_name(ALL)
-                        .long(ALL)
-                        .takes_value(false)
-                        .requires("chain")
-                        .conflicts_with_all(&["weekend, weekends", CUSTOM]),
-                )
-                .arg(
-                    Arg::with_name(WEEKDAYS)
-                        .long(WEEKDAYS)
-                        .takes_value(false)
-                        .requires("chain"),
-                )
-                .arg(
-                    Arg::with_name(WEEKENDS)
-                        .long(WEEKENDS)
-                        .takes_value(false)
-                        .requires("chain"),
-                )
-                .arg(
-                    Arg::with_name(CUSTOM)
-                        .long("FILTER")
-                        .takes_value(true)
-                        .requires("chain"),
+                    Arg::with_name("DATE")
+                        .required(false)
+                        .index(2)
+                        .help("the date to add"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("delete-chain").arg(
-                Arg::with_name("chain")
-                    .value_name("CHAIN")
+            SubCommand::with_name(MV)
+                .about("change the date of a link on CHAIN.")
+                .arg(
+                    Arg::with_name(CHAIN)
+                        .required(true)
+                        .index(1)
+                        .help("the name of the chain"),
+                )
+                .arg(
+                    Arg::with_name(CURRENT)
+                        .required(true)
+                        .index(2)
+                        .help("the current date"),
+                )
+                .arg(
+                    Arg::with_name(NEW)
+                        .required(true)
+                        .index(3)
+                        .help("the new date"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name(RM)
+                .about("delete a link from CHAIN")
+                .arg(
+                    Arg::with_name("CHAIN")
+                        .required(true)
+                        .index(1)
+                        .help("the name of the chain"),
+                )
+                .arg(
+                    Arg::with_name("DATE")
+                        .required(true)
+                        .index(2)
+                        .help("the date to delete"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name(ADD_CHAIN)
+                .about("create a new CHAIN.")
+                .arg(
+                    Arg::with_name("CHAIN")
+                        .index(1)
+                        .required(true)
+                        .help("the name of the chain"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name(RENAME_CHAIN)
+                .about("change the name of CHAIN.")
+                .arg(
+                    Arg::with_name(CURRENT)
+                        .required(true)
+                        .index(1)
+                        .help("the current name of the chain"),
+                )
+                .arg(
+                    Arg::with_name(NEW)
+                        .required(true)
+                        .index(2)
+                        .help("the new name of the chain"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name(RM_CHAIN).about("delete CHAIN.").arg(
+                Arg::with_name("CHAIN")
                     .required(true)
                     .index(1)
-                    .takes_value(true)
-                    .help("The chain's name"),
+                    .help("the name of the chain"),
             ),
         )
         .subcommand(
-            SubCommand::with_name("edit-chain")
+            SubCommand::with_name(DUE)
+                .about("list CHAINS which are due today.")
                 .arg(
-                    Arg::with_name("target")
-                        .value_name("TARGET")
-                        .required(true)
-                        .index(1)
-                        .takes_value(true)
-                        .help("The chain's current name"),
-                )
-                .arg(
-                    Arg::with_name("chain")
-                        .value_name("CHAIN")
-                        .required(true)
-                        .index(2)
-                        .takes_value(true)
-                        .help("The chain's new name"),
-                )
-                .arg(
-                    Arg::with_name(ALL)
-                        .long(ALL)
-                        .takes_value(false)
-                        .requires("chain")
-                        .conflicts_with_all(&["weekend, weekends", CUSTOM]),
-                )
-                .arg(
-                    Arg::with_name(WEEKDAYS)
-                        .long(WEEKDAYS)
-                        .takes_value(false)
-                        .requires("chain"),
-                )
-                .arg(
-                    Arg::with_name(WEEKENDS)
-                        .long(WEEKENDS)
-                        .takes_value(false)
-                        .requires("chain"),
-                )
-                .arg(
-                    Arg::with_name(CUSTOM)
-                        .long("FILTER")
-                        .takes_value(true)
-                        .requires("chain"),
-                ),
-        )
-        .subcommand(SubCommand::with_name("list-chains"))
-        .subcommand(
-            SubCommand::with_name("add-link")
-                .arg(
-                    Arg::with_name("date")
-                        .value_name("DATE")
-                        .index(2)
+                    Arg::with_name("machine")
+                        .long("machine")
+                        .short("m")
                         .required(false)
-                        .takes_value(true)
-                        .help("Link date"),
-                )
-                .arg(
-                    Arg::with_name("chain")
-                        .value_name("CHAIN")
-                        .required(true)
-                        .index(1)
-                        .takes_value(true)
-                        .help("The chain's name"),
+                        .help("provide output in a machine readable format"),
                 ),
         )
+        .subcommand(SubCommand::with_name(LS).about("list all CHAINS."))
         .subcommand(
-            SubCommand::with_name("delete-link")
+            SubCommand::with_name(STATUS)
+                .about("print the status of CHAIN or all CHAINS.")
                 .arg(
-                    Arg::with_name("date")
-                        .value_name("DATE")
-                        .index(2)
-                        .takes_value(true)
-                        .required(true)
-                        .help("Link date"),
-                )
-                .arg(
-                    Arg::with_name("chain")
-                        .value_name("CHAIN")
-                        .required(true)
+                    Arg::with_name("CHAIN")
+                        .required(false)
                         .index(1)
-                        .takes_value(true)
-                        .help("The chain's name"),
+                        .help("the name of the chain"),
                 ),
         )
         .get_matches();
 
-    let db = dirs::home_dir()
-        .ok_or(ChainError::new("Failed to locate home directory"))?
-        .join(".chain")
-        .join("chain_db");
-    let conn = Connection::open(db)?;
+    // Setup the database
+    let home_dir = dirs::home_dir().ok_or(anyhow!("Failed to locate the users home directory"))?;
+    let config_dir = home_dir.join(".c");
+    let database = config_dir.join("c.db");
+
+    if !config_dir.exists() {
+        fs::create_dir(config_dir)?;
+    }
+
+    let conn = Connection::open(database)?;
 
     database::setup_tables(&conn)?;
 
-    if let Some(matches) = matches.subcommand_matches("streak") {
-        if matches.is_present("chain") {
-            let chain_name = matches.value_of("chain").unwrap();
-            let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
-            let chain = database::get_chain_for_id(&conn, chain_id)?;
-            let links = database::get_links_for_chain_id(&conn, chain_id)?;
-            let streak = logic::calculate_streak(&chain, &links);
+    // Run subcommand
+    match matches.subcommand() {
+        (ADD, Some(m)) => add(&conn, m)?,
+        (MV, Some(m)) => mv(&conn, m)?,
+        (RM, Some(m)) => rm(&conn, m)?,
+        (ADD_CHAIN, Some(m)) => add_chain(&conn, m)?,
+        (RENAME_CHAIN, Some(m)) => rename_chain(&conn, m)?,
+        (RM_CHAIN, Some(m)) => rm_chain(&conn, m)?,
+        (DUE, Some(m)) => due(&conn, m)?,
+        (LS, Some(m)) => ls(&conn, m)?,
+        (STATUS, Some(m)) => status(&conn, m)?,
+        _ => return Err(anyhow!("Failed to parse subcommand")),
+    };
 
-            printer::print_streak(&streak);
-        } else {
-            let chains = database::get_chains(&conn)?;
-
-            for chain in chains.iter() {
-                let chain_id = chain.id.unwrap();
-                let links = database::get_links_for_chain_id(&conn, chain_id)?;
-                let streak = logic::calculate_streak(&chain, &links);
-
-                printer::print_chain_name(&chain);
-                printer::print_streak(&streak);
-                println!("");
-            }
-        }
-    } else if let Some(matches) = matches.subcommand_matches("today") {
-        // TODO cleanup "today"
-        let chains = database::get_chains(&conn)?;
-        let mut number = 0;
-        let mut total = 0;
-
-        for chain in chains.iter() {
-            let chain_id = chain.id.unwrap();
-            let links = database::get_links_for_chain_id(&conn, chain_id)?;
-            let latest_link = links.last();
-
-            let today = Local::today().naive_local();
-            if latest_link.is_some()
-                && logic::is_valid(&chain, &today.weekday())
-                && today
-                    .signed_duration_since(latest_link.unwrap().date)
-                    .num_days()
-                    > 0
-            {
-                if matches.is_present("number") {
-                    number += 1;
-                } else {
-                    let streak = logic::calculate_streak(&chain, &links);
-
-                    printer::print_chain_name(&chain);
-                    printer::print_streak(&streak);
-                    println!("");
-                }
-
-                total += 1;
-            } else if latest_link.is_none() && logic::is_valid(&chain, &today.weekday()) {
-                if matches.is_present("number") {
-                    number += 1;
-                } else {
-                    printer::print_chain_name(&chain);
-                    println!("Current streak: 0");
-                    println!("Longest streak: 0");
-                    println!("");
-                }
-
-                total += 1;
-            }
-        }
-
-        if matches.is_present("number") {
-            println!("{}", number);
-        } else if total == 0 {
-            println!("Congratulations, you have completed all of your chains for today");
-        }
-    } else if let Some(matches) = matches.subcommand_matches("add-chain") {
-        let chain_name = matches.value_of("chain").unwrap();
-
-        let chain: Chain;
-        let filter: &str;
-
-        if matches.is_present(WEEKDAYS) {
-            filter = WEEKDAYS;
-            chain = Chain {
-                id: None,
-                name: chain_name.to_string(),
-                sunday: false,
-                monday: true,
-                tuesday: true,
-                wednesday: true,
-                thursday: true,
-                friday: true,
-                saturday: false,
-            };
-        } else if matches.is_present(WEEKENDS) {
-            filter = WEEKENDS;
-            chain = Chain {
-                id: None,
-                name: chain_name.to_string(),
-                sunday: true,
-                monday: false,
-                tuesday: false,
-                wednesday: false,
-                thursday: false,
-                friday: false,
-                saturday: true,
-            };
-        } else if matches.is_present(CUSTOM) {
-            todo!()
-        } else {
-            filter = ALL;
-            chain = Chain {
-                id: None,
-                name: chain_name.to_string(),
-                sunday: true,
-                monday: true,
-                tuesday: true,
-                wednesday: true,
-                thursday: true,
-                friday: true,
-                saturday: true,
-            };
-        }
-
-        database::add_chain(&conn, &chain)?;
-
-        println!("Added \"{}\" with a filter of \"{}\"", &chain.name, filter);
-    } else if let Some(matches) = matches.subcommand_matches("delete-chain") {
-        let chain_name = matches.value_of("chain").unwrap();
-        let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
-        let links = database::get_links_for_chain_id(&conn, chain_id)?;
-
-        for link in links.iter() {
-            database::delete_link(&conn, &link)?;
-        }
-
-        database::delete_chain_for_name(&conn, &chain_name)?;
-
-        println!("Deleted \"{}\"", &chain_name);
-    } else if let Some(matches) = matches.subcommand_matches("edit-chain") {
-        let target_name = matches.value_of("target").unwrap();
-        let chain_name = matches.value_of("chain").unwrap();
-
-        let chain: Chain;
-
-        if matches.is_present(WEEKDAYS) {
-            chain = Chain {
-                id: None,
-                name: chain_name.to_string(),
-                sunday: false,
-                monday: true,
-                tuesday: true,
-                wednesday: true,
-                thursday: true,
-                friday: true,
-                saturday: false,
-            };
-        } else if matches.is_present(WEEKENDS) {
-            chain = Chain {
-                id: None,
-                name: chain_name.to_string(),
-                sunday: true,
-                monday: false,
-                tuesday: false,
-                wednesday: false,
-                thursday: false,
-                friday: false,
-                saturday: true,
-            };
-        } else if matches.is_present(CUSTOM) {
-            todo!()
-        } else {
-            chain = Chain {
-                id: None,
-                name: chain_name.to_string(),
-                sunday: true,
-                monday: true,
-                tuesday: true,
-                wednesday: true,
-                thursday: true,
-                friday: true,
-                saturday: true,
-            };
-        }
-
-        database::edit_chain_for_name(&conn, &chain, &target_name)?;
-
-        println!("Updated \"{}\"", &chain.name);
-    } else if let Some(_) = matches.subcommand_matches("list-chains") {
-        let chains = database::get_chains(&conn)?;
-
-        for chain in chains.iter() {
-            println!("{}", chain.name);
-        }
-    } else if let Some(matches) = matches.subcommand_matches("add-link") {
-        let chain_name = matches.value_of("chain").unwrap();
-        let date: NaiveDate;
-
-        if matches.is_present("date") {
-            date = NaiveDate::parse_from_str(matches.value_of("date").unwrap(), "%Y-%m-%d")?;
-        } else {
-            date = Local::today().naive_local();
-        }
-
-        let chain_id = match database::get_chain_id_for_name(&conn, &chain_name) {
-            Ok(id) => id,
-            Err(e) => return Err(e), // TODO: Make error handling more robust, or at least clean up the message
-        };
-
-        let link = Link { chain_id, date };
-        let chain = database::get_chain_for_id(&conn, chain_id)?;
-
-        if !logic::check_link(&chain, &link) {
-            bail!(
-                "Failed to add the link for \"{}\" to \"{}\", because the filter does not allow links to be created on \"{}\"",
-                &date.format("%Y-%m-%d"),
-                &chain.name,
-                &date.weekday()
-            );
-        }
-
-        database::add_link(&conn, &link)?;
-
-        let links = database::get_links_for_chain_id(&conn, chain_id)?;
-        let streak = logic::calculate_streak(&chain, &links);
-
-        println!(
-            "Added link for \"{}\" to \"{}\"",
-            date.format("%Y-%m-%d"),
-            chain_name
-        );
-        printer::print_streak(&streak);
-    } else if let Some(matches) = matches.subcommand_matches("delete-link") {
-        let date = NaiveDate::parse_from_str(matches.value_of("date").unwrap(), "%Y-%m-%d")?;
-        let chain_name = matches.value_of("chain").unwrap();
-        let chain_id = database::get_chain_id_for_name(&conn, &chain_name)?;
-
-        let link = Link { chain_id, date };
-
-        database::delete_link(&conn, &link)?;
-
-        println!(
-            "Deleted link for \"{}\" from \"{}\"",
-            date.format("%Y-%m-%d"),
-            chain_name
-        );
-    }
-
-    //
-    //    setup_tables(&conn)?;
-    //
-    //    for x in 0..10 {
-    //        let chain = Chain {
-    //            id: None,
-    //            name: format!("Chain {}", x + 1).to_string(),
-    //            sunday: rand::random(),
-    //            monday: rand::random(),
-    //            tuesday: rand::random(),
-    //            wednesday: rand::random(),
-    //            thursday: rand::random(),
-    //            friday: rand::random(),
-    //            saturday: rand::random(),
-    //        };
-    //
-    //        add_chain(&conn, &chain)?;
-    //    }
-    //
-    //    let chains = get_chains(&conn)?;
-    //
-    //    for chain in chains.iter() {
-    //        println!("Found {:?}", chain);
-    //    }
-    //
-    //    let chain_name = "Chain 1";
-    //    let chain_id = get_chain_id_for_name(&conn, chain_name)?;
-    //
-    //    let chain = get_chain_for_id(&conn, chain_id)?;
-    //
-    //    let mut date = Local::today().naive_utc();
-    //    let mut i = 0;
-    //
-    //    while i < 100 {
-    //        let link = Link {
-    //            chain_id: chain_id,
-    //            date: date,
-    //        };
-    //
-    //        if logic::check_link(&chain, &link) {
-    //            database::add_link(&conn, &link)?;
-    //
-    //            i += 1
-    //        }
-    //
-    //        date = date.succ();
-    //    }
-    //
-    //    let links = get_links_for_chain_id(&conn, chain_id)?;
-    //
-    //    for (i, link) in links.iter().enumerate() {
-    //        if i == 9 {
-    //            database::delete_link(&conn, &link)?;
-    //        }
-    //    }
-    //
-    //    let links = get_links_for_chain_id(&conn, chain_id)?;
-    //
-    //    for (i, link) in links.iter().enumerate() {
-    //        println!("{}. Found {:?}", i + 1, link);
-    //    }
-    //
-    //    let streak = logic::calculate_streak(&chain, &links);
-    //
-    //    println!("Longest streak: {}", streak.longest_streak);
-    //    println!("Current streak: {}", streak.streak);
-    //
-    //
     Ok(())
 }

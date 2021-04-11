@@ -1,6 +1,6 @@
 [package]
-name = "chain"
-version = "0.1.6"
+name = "c"
+version = "0.2.0"
 authors = ["Odaka Ui <31593320+odakaui@users.noreply.github.com>"]
 edition = "2018"
 

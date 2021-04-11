@@ -7,6 +7,12 @@ pub struct Chain {
 }
 
 #[derive(Debug)]
+pub struct Day {
+    pub day: i32,
+    pub is_done: bool,
+}
+
+#[derive(Debug)]
 pub struct Link {
     pub chain_id: i32,
     pub date: NaiveDate,
@@ -18,3 +24,4 @@ pub struct Streak {
     pub streak: i32,
     pub longest_streak: i32,
 }
+

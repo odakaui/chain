@@ -1,25 +1,46 @@
-use crate::structs::{Chain, Link, Streak};
+use super::structs::{Chain, Day, Link, Streak};
 
-pub fn print_streaks(streaks: &Vec<Streak>) {
+pub fn print_days(days: &Vec<Day>) {
+    if days.len() == 0 {
+        return
+    }
+    
+    let mut dates = String::new();
+    let mut is_done = String::new();
+
+    for day in days.iter() {
+        dates.push_str(&format!("{:02} ", day.day));
+        is_done.push_str(&format!("{:>2} ", if day.is_done { "XX" } else { "--" }));
+    }
+
+    println!("{}", dates);
+    println!("{}", is_done);
+    println!("");
+}
+
+pub fn print_streaks(streaks: &Vec<(Streak, Vec<Day>)>) {
     if streaks.len() > 0 {
-        for streak in streaks.iter() {
+        for (streak, days) in streaks.iter() {
             println!("{}", streak.name);
             println!("Current streak: {}", streak.streak);
             println!("Longest streak: {}", streak.longest_streak);
-            println!("");
+
+            print_days(&days);
         }
     } else {
         println!("Congratulations. You completed all of your chains for today.");
     }
 }
 
-pub fn print_streak(streak: &Streak) {
+pub fn print_streak(streak: &Streak, days: &Vec<Day>) {
     println!("{}", streak.name);
     println!("Current streak: {}", streak.streak);
     println!("Longest streak: {}", streak.longest_streak);
+
+    print_days(days);
 }
 
-pub fn print_streaks_machine(streaks: &Vec<Streak>) {
+pub fn print_streaks_machine(streaks: &Vec<(Streak, Vec<Day>)>) {
     println!("{}", streaks.len());
 }
 
@@ -65,3 +86,4 @@ pub fn print_ls(chains: &Vec<Chain>) {
         println!("{}", chain.name);
     }
 }
+

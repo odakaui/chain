@@ -5,8 +5,7 @@ use dirs;
 use rusqlite::Connection;
 use std::fs;
 
-pub use chain_error::ChainError;
-pub use structs::{Chain, Link, Streak};
+pub use structs::{Chain, Day, Link, Streak};
 
 pub mod chain_error;
 pub mod database;
@@ -61,10 +60,12 @@ fn add(conn: &Connection, m: &ArgMatches) -> Result<()> {
     database::add_link(&conn, &link)?;
 
     let links = database::get_links_for_chain_id(&conn, id)?;
+
     let streak = logic::calculate_streak(&chain, &links);
+    let days = logic::create_days(&links);
 
     printer::print_add(&chain, &link);
-    printer::print_streak(&streak);
+    printer::print_streak(&streak, &days);
 
     Ok(())
 }
@@ -158,7 +159,7 @@ fn rm_chain(conn: &Connection, m: &ArgMatches) -> Result<()> {
 fn due(conn: &Connection, m: &ArgMatches) -> Result<()> {
     let chains = database::get_chains(&conn)?;
 
-    let mut due: Vec<Streak> = Vec::new();
+    let mut due: Vec<(Streak, Vec<Day>)> = Vec::new();
 
     for chain in chains.iter() {
         let id = chain.id;
@@ -172,7 +173,9 @@ fn due(conn: &Connection, m: &ArgMatches) -> Result<()> {
             // signed_duration_since will be zero if there is a link for today.
             if today.signed_duration_since(latest.unwrap().date).num_days() > 0 {
                 let streak = logic::calculate_streak(&chain, &links);
-                due.push(streak);
+                let days = logic::create_days(&links);
+
+                due.push((streak, days));
             }
         } else {
             let streak = Streak {
@@ -181,7 +184,9 @@ fn due(conn: &Connection, m: &ArgMatches) -> Result<()> {
                 longest_streak: 0,
             };
 
-            due.push(streak);
+            let days = logic::create_dummy_days();
+
+            due.push((streak, days));
         }
     }
 
@@ -212,19 +217,23 @@ fn status(conn: &Connection, m: &ArgMatches) -> Result<()> {
         let links = database::get_links_for_chain_id(&conn, id)?;
 
         let streak = logic::calculate_streak(&chain, &links);
+        let days = logic::create_days(&links);
 
-        printer::print_streak(&streak);
+        printer::print_streak(&streak, &days);
+
     } else {
         let chains = database::get_chains(&conn)?;
 
-        let mut streaks: Vec<Streak> = Vec::new();
+        let mut streaks: Vec<(Streak, Vec<Day>)> = Vec::new();
 
         for chain in chains.iter() {
             let chain_id = chain.id;
             let links = database::get_links_for_chain_id(&conn, chain_id as i32)?;
-            let streak = logic::calculate_streak(&chain, &links);
 
-            streaks.push(streak);
+            let streak = logic::calculate_streak(&chain, &links);
+            let days = logic::create_days(&links);
+
+            streaks.push((streak, days));
         }
 
         printer::print_streaks(&streaks);
